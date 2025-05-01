@@ -119,7 +119,7 @@
       fetch.writeCommitGraph = true;
       push.autoSetupRemote = true;
       commit.gpgsign = true;
-      user.signingkey = "86C60D761EB5F758";
+      user.signingkey = "F866BB6F36E65E81";
       delta.side-by-side = true;
       delta.line-numbers = false;
     };
