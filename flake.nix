@@ -12,8 +12,8 @@
     let
       system = "aarch64-darwin";
       pkgs = nixpkgs.legacyPackages.${system};
-      username = "david.mejorado";
-      homeDirectory = "/Users/david.mejorado";
+      username = "abenavides";
+      homeDirectory = "/Users/abenavides";
     in
     {
       homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {

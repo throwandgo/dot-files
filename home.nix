@@ -101,8 +101,8 @@
 
   programs.git = {
     enable = true;
-    userName = "David Mejorado";
-    userEmail = "david.mejorado@gmail.com";
+    userName = "Austin Benavides";
+    userEmail = "austinabenavides@gmail.com";
 
     aliases = {
       current-branch = "rev-parse --abbrev-ref HEAD";
