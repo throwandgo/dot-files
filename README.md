@@ -7,7 +7,7 @@
 * clone
 
   ```shell
-  git clone git@github.com:davidmh/dot-files.git ~/.config/home-manager
+  git clone git@github.com:throwandgo/dot-files.git ~/.config/home-manager
   ```
 
 * run
