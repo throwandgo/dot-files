@@ -1,3 +1,4 @@
+# Setup
 * install nix
 
   ```shell
