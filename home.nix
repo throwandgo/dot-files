@@ -17,6 +17,7 @@
     clojure
     fd
     fx
+    fzf
     gcc
     go
     htop
