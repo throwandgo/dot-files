@@ -5,6 +5,7 @@ return {
     "Exafunction/codeium.nvim",
     cmd = "Codeium",
     opts = {
+      -- vim.g.ai_cmp is set in options.lua
       enable_cmp_source = vim.g.ai_cmp,
       virtual_text = {
         enabled = not vim.g.ai_cmp,
