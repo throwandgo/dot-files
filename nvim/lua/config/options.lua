@@ -11,3 +11,9 @@ vim.g.snacks_animate = false
 -- taking the place of better suggestions from LSP and other sources in the menu. So, instead of
 -- showing them in the menu, we instead show them in the virtual text.
 vim.g.ai_cmp = false
+
+-- Disable the use of the LSP root for finding files (and other such things).
+--
+-- I never want the concept of the project root to be the LSP root, which is usually a subdirectory
+-- of a project.
+vim.g.root_lsp_ignore = { "eslint", "jedi_language_server", "pyright", "ruff", "tailwindcss", "ts_ls" }
