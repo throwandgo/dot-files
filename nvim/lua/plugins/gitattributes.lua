@@ -1,7 +1,5 @@
 -- See: https://github.com/davidmh/gitattributes.nvim.
 return {
-  {
-    "davidmh/gitattributes.nvim",
-    opts = {},
-  },
+  "davidmh/gitattributes.nvim",
+  opts = {},
 }

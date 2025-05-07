@@ -7,8 +7,6 @@
 local cond = require("utils.conditions")
 
 return {
-  {
-    "tpope/vim-rhubarb",
-    cond = cond.is_in_git_repo,
-  },
+  "tpope/vim-rhubarb",
+  cond = cond.is_in_git_repo,
 }

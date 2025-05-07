@@ -1,6 +1,4 @@
 return {
-  {
-    "tpope/vim-dispatch",
-    cmd = { "Dispatch" },
-  },
+  "tpope/vim-dispatch",
+  cmd = { "Dispatch" },
 }
