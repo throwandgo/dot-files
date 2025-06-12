@@ -22,6 +22,7 @@ vim.g.root_lsp_ignore = {
   "pyright",
   "ruff",
   "rust_analyzer",
+  "solargraph",
   "tailwindcss",
   "ts_ls",
 }
