@@ -34,6 +34,7 @@
     ripgrep # better grep
     tig # better git cli
     wezterm # terminal emulator
+    zoxide # cd with memory
 
     unstable.neovim # editor
     unstable.nixpkgs-fmt # nix formatter
