@@ -1,4 +1,4 @@
-{ pkgs, config, inputs, ... }:
+{ pkgs, lib, config, inputs, ... }:
 
 {
   home.sessionVariables = {
@@ -50,7 +50,7 @@
   programs.zsh = {
     enable = true;
     autocd = true;
-    initExtraBeforeCompInit = ''
+    initContent = lib.mkOrder 550 ''
       if [ -f ~/.config/extra.zsh ]; then
         source ~/.config/extra.zsh
       fi
@@ -134,6 +134,8 @@
     enable = true;
     defaultCacheTtl = 28800;
     enableSshSupport = true;
-    pinentryPackage = pkgs.pinentry_mac;
+    pinentry = {
+      package = pkgs.pinentry_mac;
+    };
   };
 }
