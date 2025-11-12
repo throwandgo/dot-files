@@ -78,7 +78,7 @@
   programs.git = {
     enable = true;
     userName = "Austin Benavides";
-    userEmail = "austinabenavides@gmail.com";
+    userEmail = "7328768+throwandgo@users.noreply.github.com";
 
     aliases = {
       current-branch = "rev-parse --abbrev-ref HEAD";
