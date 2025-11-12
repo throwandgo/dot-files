@@ -9,13 +9,15 @@
   };
 
   home.packages = with pkgs; [
+    firefox # browser
+    spotify # music streaming
+
     asciinema # generating gifs from terminal sessions
     asciinema-agg # same as above
     bat # better cat
     coreutils # gnu core utilities
     devenv # nix dev env
     fd # better find
-    firefox # browser
     fx # interactive jq
     fzf # fuzzy finding across projects
     git-absorb # better git fixup
