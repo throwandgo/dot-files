@@ -9,59 +9,34 @@
   };
 
   home.packages = with pkgs; [
-    asciinema
-    asciinema-agg
-    android-tools
-    bat
-    coreutils
-    clojure
-    fd
-    fx
-    fzf
-    gcc
-    go
-    htop
-    imagemagick
-    jdk
-    jq
-    lazygit
-    leiningen
-    lsd
-    nodejs_22
-    (yarn.override { nodejs = nodejs_22; })
-    pass
-    pnpm
-    selene
-    silver-searcher
-    ripgrep
-    tig
-    ueberzug
-    unstable.aerospace
-    unstable.ast-grep
-    unstable.bun
-    unstable.deno
-    unstable.devenv
-    unstable.cargo
-    unstable.gh
-    unstable.git-absorb
-    unstable.gnupg
-    unstable.jankyborders
-    unstable.lldb_19
-    unstable.lua
-    unstable.lua51Packages.luarocks-nix
-    unstable.neovim
-    unstable.nixpkgs-fmt
-    unstable.nerd-fonts.hasklug
-    unstable.sqlfluff
-    unstable.tree-sitter
-    wezterm
+    asciinema # generating gifs from terminal sessions
+    asciinema-agg # same as above
+    bat # better cat
+    coreutils # gnu core utilities
+    devenv # nix dev env
+    fd # better find
+    firefox # browser
+    fx # interactive jq
+    fzf # fuzzy finding across projects
+    git-absorb # better git fixup
+    gh # github cli
+    gnupg # gpg signing
+    htop # better top
+    jq # json viewing and querying
+    lazygit # interactive git tree viewer
+    lsd # better ls
+    lua # lang suppuort
+    lua51Packages.luarocks-nix # manage lua packages via nix
+    pass # passwords and gpg signing
+    selene # fast lua linter
+    ripgrep # better grep
+    tig # better git cli
+    wezterm # terminal emulator
 
-    # Remix
-    colima
-    docker
-    docker-compose
-    postgresql_16
-    redis
+    unstable.neovim # editor
+    unstable.nixpkgs-fmt # nix formatter
+    unstable.nerd-fonts.hasklug # font with icons/glyphs
+    unstable.tree-sitter # parsing library for syntax highlighting
   ];
 
   programs.home-manager.enable = true;
@@ -120,7 +95,7 @@
       fetch.writeCommitGraph = true;
       push.autoSetupRemote = true;
       commit.gpgsign = true;
-      user.signingkey = "F866BB6F36E65E81";
+      user.signingkey = "4BD10B2EC93F2CB8";
       delta.side-by-side = true;
       delta.line-numbers = false;
     };
