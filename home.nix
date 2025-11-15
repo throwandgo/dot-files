@@ -12,6 +12,7 @@
     firefox # browser
     obsidian # notes
     spotify # music streaming
+    raycast # spotlight replacement
 
     asciinema # generating gifs from terminal sessions
     asciinema-agg # same as above
