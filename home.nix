@@ -10,6 +10,7 @@
 
   home.packages = with pkgs; [
     firefox # browser
+    obsidian # notes
     spotify # music streaming
 
     asciinema # generating gifs from terminal sessions
@@ -120,8 +121,6 @@
         minus-emph-style = "red bold";
         plus-style = "green";
         plus-emph-style = "green bold";
-
-
       };
     };
 
