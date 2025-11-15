@@ -169,14 +169,12 @@
 
   # MacOS system preferences.
   # See: https://nix-community.github.io/home-manager/options.xhtml#opt-targets.darwin.defaults.
-  targets.darwin = {
-    defaults = {
-      NSGlobalDomain = {
-        KeyRepeat = 2;  # 2 ms between repeats
-        InitialKeyRepeat = 15;  # 15 ms to begin repeating
-        ApplePressAndHoldEnabled = false; # disable press-and-hold for accents
-        "com.apple.trackpad.scaling" = 2; # tracking speed
-      };
+  targets.darwin.defaults = {
+    NSGlobalDomain = {
+      KeyRepeat = 2;  # 2 ms between repeats
+      InitialKeyRepeat = 15;  # 15 ms to begin repeating
+      ApplePressAndHoldEnabled = false; # disable press-and-hold for accents
+      "com.apple.trackpad.scaling" = 2; # tracking speed
     };
   };
 }
