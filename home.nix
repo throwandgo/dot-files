@@ -89,7 +89,9 @@
       fresh = "!git switch $(git default-branch) && git pull origin $(git default-branch) && git fetch";
       pushc = "!git push origin $(git current-branch) --force-with-lease";
       pullc = "!git pull origin $(git current-branch)";
-      amend-date = ''!LC_ALL=C GIT_COMMITTER_DATE="$(date)" git commit -n --amend --no-edit --date "$(date)"'';
+      l = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit";
+      find = "log --all --grep -i";
+      when = "log -S -i";
     };
 
     delta = {
