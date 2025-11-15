@@ -140,6 +140,13 @@
     };
   };
 
+  services.macos-remap-keys = {
+    enable = true;
+    keyboard = {
+      Capslock = "Escape";
+    };
+  };
+
   # MacOS system preferences.
   # See: https://nix-community.github.io/home-manager/options.xhtml#opt-targets.darwin.defaults.
   targets.darwin = {
@@ -151,6 +158,5 @@
         "com.apple.trackpad.scaling" = 2; # tracking speed
       };
     };
-
   };
 }
