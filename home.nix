@@ -103,17 +103,25 @@
 
         syntax-theme = "none";
 
-        minus-style = "red";
-        minus-emph-style = "red bold";
-        plus-style = "green";
-        plus-emph-style = "green bold";
+        file-style = "bold yellow";
+        file-decoration-style = "yellow ol ul";
+        file-added-label = "+";
+        file-modified-label = "~";
+        file-removed-label = "-";
+
+        hunk-header-style = "file line-number";
+        hunk-header-decoration-style = "none";
 
         line-numbers-minus-style = "red";
         line-numbers-plus-style = "green";
         line-numbers-zero-style = "dim";
 
-        hunk-header-style = "file line-number";
-        hunk-header-decoration-style = "none";
+        minus-style = "red";
+        minus-emph-style = "red bold";
+        plus-style = "green";
+        plus-emph-style = "green bold";
+
+
       };
     };
 
