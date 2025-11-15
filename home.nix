@@ -128,11 +128,11 @@
     lfs.enable = true;
 
     extraConfig = {
-      init.defaultBranch = "main";
-      rebase.autosquash = true;
-      fetch.writeCommitGraph = true;
-      push.autoSetupRemote = true;
       commit.gpgsign = true;
+      fetch.writeCommitGraph = true;
+      init.defaultBranch = "main";
+      push.autoSetupRemote = true;
+      rebase.autosquash = true;
       user.signingkey = "4BD10B2EC93F2CB8";
     };
   };
