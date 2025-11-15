@@ -87,10 +87,35 @@
       current-branch = "rev-parse --abbrev-ref HEAD";
       default-branch = "!git rev-parse --abbrev-ref origin/HEAD | awk -F/ '{print $2}'";
       fresh = "!git switch $(git default-branch) && git pull origin $(git default-branch) && git fetch";
-      pushc = "!git push origin $(git current-branch)";
+      pushc = "!git push origin $(git current-branch) --force-with-lease";
       pullc = "!git pull origin $(git current-branch)";
       amend-date = ''!LC_ALL=C GIT_COMMITTER_DATE="$(date)" git commit -n --amend --no-edit --date "$(date)"'';
     };
+
+    delta = {
+      enable = true;
+      options = {
+        navigate = true;
+        line-numbers = false;
+        side-by-side = false;
+
+        syntax-theme = "none";
+
+        minus-style = "red";
+        minus-emph-style = "red bold";
+        plus-style = "green";
+        plus-emph-style = "green bold";
+
+        line-numbers-minus-style = "red";
+        line-numbers-plus-style = "green";
+        line-numbers-zero-style = "dim";
+
+        hunk-header-style = "file line-number";
+        hunk-header-decoration-style = "none";
+      };
+    };
+
+    lfs.enable = true;
 
     extraConfig = {
       init.defaultBranch = "main";
@@ -99,12 +124,7 @@
       push.autoSetupRemote = true;
       commit.gpgsign = true;
       user.signingkey = "4BD10B2EC93F2CB8";
-      delta.side-by-side = true;
-      delta.line-numbers = false;
     };
-
-    diff-so-fancy.enable = true;
-    lfs.enable = true;
   };
 
   programs.tmux = {
