@@ -4,7 +4,6 @@
   home.sessionVariables = {
     EDITOR = "nvim";
     TIG_EDITOR = "nvim";
-    DIRENV_LOG_FORMAT = "";
     OVERCOMMIT_COLOR = 0;
   };
 
@@ -46,7 +45,16 @@
 
   programs.home-manager.enable = true;
 
-  programs.direnv.enable = true;
+  programs.direnv = {
+    enable = true;
+    nix-direnv.enable = true;
+
+    config = {
+      global = {
+        hide_env_diff = true; # silence env var diff when entering directory
+      };
+    };
+  };
 
   programs.starship.enable = true;
 
