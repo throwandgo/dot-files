@@ -13,6 +13,10 @@
     spotify # music streaming
     raycast # spotlight replacement
 
+    # The below GUI apps are not available yet via nixpkgs on darwin.
+    # - beeper # messaging
+    # - claude # llm
+
     asciinema # generating gifs from terminal sessions
     asciinema-agg # same as above
     bat # better cat
