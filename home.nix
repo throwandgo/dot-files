@@ -16,6 +16,7 @@
     # The below GUI apps are not available yet via nixpkgs on darwin.
     # - beeper # messaging
     # - claude # llm
+    # - naps2 # scanner utilities
 
     asciinema # generating gifs from terminal sessions
     asciinema-agg # same as above
@@ -34,6 +35,7 @@
     lsd # better ls
     lua # lang suppuort
     lua51Packages.luarocks-nix # manage lua packages via nix
+    mise # dev env manager (outside of nix)
     pass # passwords and gpg signing
     selene # fast lua linter
     ripgrep # better grep
@@ -172,6 +174,8 @@
   programs.zellij = {
     enable = true;
   };
+
+  programs.mise.enable = true;
 
   services.gpg-agent = {
     enable = true;
