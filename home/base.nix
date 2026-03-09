@@ -35,7 +35,6 @@
     lsd # better ls
     lua # lang suppuort
     lua51Packages.luarocks-nix # manage lua packages via nix
-    mise # dev env manager (outside of nix)
     pass # passwords and gpg signing
     selene # fast lua linter
     ripgrep # better grep
@@ -48,8 +47,6 @@
     unstable.nerd-fonts.hasklug # font with icons/glyphs
     unstable.tree-sitter # parsing library for syntax highlighting
   ];
-
-  programs.home-manager.enable = true;
 
   programs.direnv = {
     enable = true;
