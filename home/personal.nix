@@ -4,7 +4,7 @@
   imports = [ ./base.nix ];
 
   home.packages = with pkgs; [
-    obsidian
+    # personal packages
   ];
 
   programs.git = {

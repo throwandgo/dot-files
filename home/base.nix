@@ -9,6 +9,7 @@
 
   home.packages = with pkgs; [
     firefox # browser
+    obsidian # notes
     spotify # music streaming
     raycast # spotlight replacement
 
