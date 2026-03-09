@@ -15,10 +15,17 @@ ln -s ~/.config/home-manager/wezterm.lua ~/.config/wezterm/wezterm.lua 2>/dev/nu
 ln -s ~/.config/home-manager/aerospace.toml ~/.config/aerospace/aerospace.toml 2>/dev/null
 ln -s ~/.config/home-manager/starship.toml ~/.config/starship.toml 2>/dev/null
 
-if ! command -v home-manager &>/dev/null; then
-  nix run home-manager -- init --switch
+# Detect what machine we're on to apply the correct home-manager config.
+if [[ "$(hostname)" == "Austins-MacBook-Air.local" ]]; then
+  FLAKE_TARGET="personal"
 else
-  home-manager switch
+  FLAKE_TARGET="work"
+fi
+
+if ! command -v home-manager &>/dev/null; then
+  nix run home-manager -- init --switch --flake .#${FLAKE_TARGET}
+else
+  home-manager switch --flake .#${FLAKE_TARGET}
 fi
 
 if [[ "$(uname)" == "Darwin" ]]; then

@@ -9,7 +9,6 @@
 
   home.packages = with pkgs; [
     firefox # browser
-    obsidian # notes
     spotify # music streaming
     raycast # spotlight replacement
 
@@ -96,8 +95,6 @@
 
   programs.git = {
     enable = true;
-    userName = "Austin Benavides";
-    userEmail = "7328768+throwandgo@users.noreply.github.com";
 
     aliases = {
       current-branch = "rev-parse --abbrev-ref HEAD";
@@ -147,7 +144,6 @@
       init.defaultBranch = "main";
       push.autoSetupRemote = true;
       rebase.autosquash = true;
-      user.signingkey = "4BD10B2EC93F2CB8";
     };
   };
 

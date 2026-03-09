@@ -12,42 +12,50 @@
     let
       system = "aarch64-darwin";
       pkgs = nixpkgs.legacyPackages.${system};
-      username = "abe";
-      homeDirectory = "/Users/abe";
-    in
-    {
-      homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {
-        inherit pkgs;
 
-        modules = [
-          {
-            nixpkgs = {
-              config = {
-                allowUnfree = true;
-                allowUnfreePredicate = (pkgs: true);
+      nixpkgsModule = {
+        nixpkgs = {
+          config = {
+            allowUnfree = true;
+            allowUnfreePredicate = (pkgs: true);
+          };
+          overlays = [
+            (final: prev: {
+              unstable = import inputs.unstable {
+                system = final.system;
+                config.allowUnfree = true;
               };
-              overlays = [
-                (final: prev: {
-                  unstable = import inputs.unstable {
-                    system = final.system;
-                    config.allowUnfree = true;
-                  };
-                })
-              ];
-            };
-          }
-          ./home.nix
+            })
+          ];
+        };
+      };
+
+      mkHome = { username, homeDirectory, machineModule }: home-manager.lib.homeManagerConfiguration {
+        inherit pkgs;
+        modules = [
+          nixpkgsModule
+          machineModule
           {
             home.username = username;
             home.homeDirectory = homeDirectory;
             home.stateVersion = "25.05";
           }
         ];
+        extraSpecialArgs = { inherit inputs; };
+      };
+    in
+    {
+      homeConfigurations = {
+        "personal" = mkHome {
+          username = "abe";
+          homeDirectory = "/Users/abe";
+          machineModule = ./home/personal.nix;
+        };
 
-        # Optionally use extraSpecialArgs
-        # to pass through arguments to home.nix
-        extraSpecialArgs = {
-          inherit inputs;
+        "work" = mkHome {
+          username = "ABenavides";
+          homeDirectory = "/Users/ABenavides";
+          machineModule = ./home/work.nix;
         };
       };
     };
