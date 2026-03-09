@@ -23,7 +23,7 @@ else
 fi
 
 if ! command -v home-manager &>/dev/null; then
-  nix run home-manager -- init --switch --flake .#${FLAKE_TARGET}
+  nix run home-manager -- switch --flake .#${FLAKE_TARGET}
 else
   home-manager switch --flake .#${FLAKE_TARGET}
 fi
