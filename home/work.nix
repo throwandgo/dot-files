@@ -9,7 +9,7 @@
 
   programs.git = {
     userName = "Austin Benavides";
-    userEmail = "abenavides@metropolis.io";               # ← your work email
-    extraConfig.user.signingkey = "WORK_GPG_KEY"; # ← your work GPG key
+    userEmail = "7328768+throwandgo@users.noreply.github.com";
+    extraConfig.user.signingkey = "5B7E0BFE597FC4AF";
   };
 }
