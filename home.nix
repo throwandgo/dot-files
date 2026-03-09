@@ -4,7 +4,7 @@
   home.sessionVariables = {
     EDITOR = "nvim";
     TIG_EDITOR = "nvim";
-    OVERCOMMIT_COLOR = 0;
+    XDG_CONFIG_HOME = "${config.home.homeDirectory}/.config";
   };
 
   home.packages = with pkgs; [
