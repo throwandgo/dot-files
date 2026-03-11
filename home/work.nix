@@ -5,6 +5,7 @@
 
   home.packages = with pkgs; [
     # work-specific packages
+    gitify
   ];
 
   programs.git = {
