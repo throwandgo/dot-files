@@ -1,5 +1,7 @@
 -- See: https://github.com/davidmh/gitattributes.nvim.
 return {
   "davidmh/gitattributes.nvim",
-  opts = {},
+  init = function()
+    vim.g.gitattributes_config = {}
+  end,
 }
