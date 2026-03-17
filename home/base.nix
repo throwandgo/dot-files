@@ -65,8 +65,8 @@
     enable = true;
     autocd = true;
     initContent = lib.mkOrder 550 ''
-      if [ -f ~/.config/extra.zsh ]; then
-        source ~/.config/extra.zsh
+      if [ -f ~/.config/home-manager/extra.zsh ]; then
+        source ~/.config/home-manager/extra.zsh
       fi
     '';
     history.ignoreSpace = true;
