@@ -4,8 +4,12 @@
   imports = [ ./base.nix ];
 
   home.packages = with pkgs; [
-    # work-specific packages
     gitify
+    orbstack
+
+    # The below GIU apps are not available yet via nixpkgs on darwin.
+    # - AWS VPN
+    # - ZeroTier VPN
   ];
 
   programs.git = {
