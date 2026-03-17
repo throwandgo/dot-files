@@ -20,5 +20,6 @@ export PATH="$HOME/.local/bin:$PATH"
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-# Use zoxide instead of cd.
-eval "$(zoxide init zsh --cmd cd)"
+# Set up zoxide.
+# Overriding `cd` doesn't play well with Claude Code, so we avoid that for now.
+eval "$(zoxide init zsh)"
