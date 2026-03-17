@@ -4,8 +4,8 @@
   imports = [ ./base.nix ];
 
   home.packages = with pkgs; [
-    gitify
-    orbstack
+    gitify # github notification app
+    orbstack # lightweight docker desktop replacement
 
     # The below GIU apps are not available yet via nixpkgs on darwin.
     # - AWS VPN
