@@ -169,8 +169,6 @@
     enable = true;
   };
 
-  programs.mise.enable = true;
-
   services.gpg-agent = {
     enable = true;
     defaultCacheTtl = 28800;
