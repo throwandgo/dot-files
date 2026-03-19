@@ -3,7 +3,7 @@ local wezterm = require('wezterm')
 return {
   font = wezterm.font('Hasklug Nerd Font', { weight = 'Medium' }),
   font_size = 14.0,
-  front_end = 'Software',
+  front_end = 'WebGpu',
   color_scheme = 'Catppuccin Frappe',
   line_height = 1.2,
   underline_position = -7,
@@ -11,6 +11,9 @@ return {
   hide_tab_bar_if_only_one_tab = true,
   adjust_window_size_when_changing_font_size = false,
   audible_bell = 'Disabled',
+  scrollback_lines = 10000,
+  window_decorations = 'RESIZE',
+  window_close_confirmation = 'NeverPrompt',
   keys = {
     {
       key = 'n',
@@ -27,13 +30,22 @@ return {
       mods = 'CMD',
       action = 'ReloadConfiguration',
     },
-
     {
       key = 'd',
       mods = 'SHIFT|CTRL',
       action = wezterm.action.DetachDomain('CurrentPaneDomain'),
     },
+
+    -- Tab control
+    {
+      key = '{',
+      mods = 'SHIFT|CTRL',
+      action = wezterm.action.MoveTabRelative(-1),
+    },
+    {
+      key = '}',
+      mods = 'SHIFT|CTRL',
+      action = wezterm.action.MoveTabRelative(1),
+    },
   },
-  window_decorations = 'RESIZE',
-  window_close_confirmation = 'NeverPrompt',
 }
