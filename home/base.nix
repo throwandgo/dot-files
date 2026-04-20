@@ -85,6 +85,7 @@
       ];
     };
     shellAliases = {
+      c = "claude";
       v = "nvim";
       vim = "nvim";
       ll = "lsd -l";
