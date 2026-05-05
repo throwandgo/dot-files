@@ -17,6 +17,7 @@ vim.g.ai_cmp = false
 -- I never want the concept of the project root to be the LSP root, which is usually a subdirectory
 -- of a project.
 vim.g.root_lsp_ignore = {
+  "buf_ls",
   "eslint",
   "jedi_language_server",
   "pyright",
