@@ -94,55 +94,54 @@
 
   programs.git = {
     enable = true;
-
-    aliases = {
-      current-branch = "rev-parse --abbrev-ref HEAD";
-      default-branch = "!git rev-parse --abbrev-ref origin/HEAD | awk -F/ '{print $2}'";
-      fresh = "!git switch $(git default-branch) && git pull origin $(git default-branch) && git fetch";
-      pushc = "!git push origin $(git current-branch) --force-with-lease";
-      pullc = "!git pull origin $(git current-branch)";
-      l = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit";
-      find = "log --all --grep -i";
-      when = "log -S -i";
-    };
-
-    delta = {
-      enable = true;
-      options = {
-        navigate = true;
-        line-numbers = false;
-        side-by-side = false;
-
-        syntax-theme = "none";
-
-        file-style = "bold yellow";
-        file-decoration-style = "yellow ol ul";
-        file-added-label = "+";
-        file-modified-label = "~";
-        file-removed-label = "-";
-
-        hunk-header-style = "file line-number";
-        hunk-header-decoration-style = "none";
-
-        line-numbers-minus-style = "red";
-        line-numbers-plus-style = "green";
-        line-numbers-zero-style = "dim";
-
-        minus-style = "red";
-        minus-emph-style = "red bold";
-        plus-style = "green";
-        plus-emph-style = "green bold";
-      };
-    };
-
     lfs.enable = true;
 
-    extraConfig = {
+    settings = {
+      alias = {
+        current-branch = "rev-parse --abbrev-ref HEAD";
+        default-branch = "!git rev-parse --abbrev-ref origin/HEAD | awk -F/ '{print $2}'";
+        fresh = "!git switch $(git default-branch) && git pull origin $(git default-branch) && git fetch";
+        pushc = "!git push origin $(git current-branch) --force-with-lease";
+        pullc = "!git pull origin $(git current-branch)";
+        l = "log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit";
+        find = "log --all --grep -i";
+        when = "log -S -i";
+      };
       commit.gpgsign = true;
       fetch.writeCommitGraph = true;
       init.defaultBranch = "main";
       push.autoSetupRemote = true;
       rebase.autosquash = true;
+    };
+  };
+
+  programs.delta = {
+    enable = true;
+    enableGitIntegration = true;
+    options = {
+      navigate = true;
+      line-numbers = false;
+      side-by-side = false;
+
+      syntax-theme = "none";
+
+      file-style = "bold yellow";
+      file-decoration-style = "yellow ol ul";
+      file-added-label = "+";
+      file-modified-label = "~";
+      file-removed-label = "-";
+
+      hunk-header-style = "file line-number";
+      hunk-header-decoration-style = "none";
+
+      line-numbers-minus-style = "red";
+      line-numbers-plus-style = "green";
+      line-numbers-zero-style = "dim";
+
+      minus-style = "red";
+      minus-emph-style = "red bold";
+      plus-style = "green";
+      plus-emph-style = "green bold";
     };
   };
 

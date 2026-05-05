@@ -1,9 +1,9 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-25.05-darwin";
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-25.11-darwin";
     unstable.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     home-manager = {
-      url = "github:nix-community/home-manager/release-25.05";
+      url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -25,6 +25,8 @@
                 system = final.system;
                 config.allowUnfree = true;
               };
+              # direnv's fish integration test is killed by the macOS sandbox
+              direnv = prev.direnv.overrideAttrs (_: { doCheck = false; });
             })
           ];
         };
