@@ -20,6 +20,7 @@ vim.g.root_lsp_ignore = {
   "buf_ls",
   "eslint",
   "jedi_language_server",
+  "metals",
   "pyright",
   "ruff",
   "rust_analyzer",
