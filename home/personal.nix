@@ -7,9 +7,11 @@
     # personal packages
   ];
 
-  programs.git = {
-    userName = "Austin Benavides";
-    userEmail = "7328768+throwandgo@users.noreply.github.com";
-    extraConfig.user.signingkey = "4BD10B2EC93F2CB8";
+  programs.git.settings = {
+    user = {
+      name = "Austin Benavides";
+      email = "7328768+throwandgo@users.noreply.github.com";
+      signingkey = "4BD10B2EC93F2CB8";
+    };
   };
 }

@@ -21,6 +21,7 @@
     asciinema # generating gifs from terminal sessions
     asciinema-agg # same as above
     bat # better cat
+    claude-code # llm programming
     coreutils # gnu core utilities
     devenv # nix dev env
     fd # better find
