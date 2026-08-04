@@ -114,7 +114,22 @@ in
         { id = "10"; type = "separator"; color = "hex:838ba7"; }
         { id = "11"; type = "git-changes"; color = "hex:e5c890"; } # yellow, 7.62:1
       ]
-      [ ]
+      # Second line: quota. These come from api.anthropic.com/api/oauth/usage,
+      # authenticated with the OAuth token in the macOS Keychain and cached for
+      # 180s. Only the overage pool reports real numbers on this account --
+      # weekly/session both return 0, and the API sends no weekly-reset
+      # timestamp, so "weekly-reset-timer" would read [Loading] forever. Add
+      # { type = "weekly-usage"; metadata = { display = "progress-short"; }; }
+      # if a plan starts metering weekly.
+      [
+        { id = "20"; type = "extra-usage-utilization"; color = "hex:ef9f76"; metadata = { display = "progress-short"; }; }
+        { id = "21"; type = "separator"; color = "hex:838ba7"; }
+        { id = "22"; type = "extra-usage-remaining"; color = "hex:a6d189"; }
+        { id = "23"; type = "separator"; color = "hex:838ba7"; }
+        { id = "24"; type = "session-cost"; color = "hex:8caaee"; }
+        { id = "25"; type = "separator"; color = "hex:838ba7"; }
+        { id = "26"; type = "reset-timer"; color = "hex:a5adce"; } # 5hr block
+      ]
       [ ]
     ];
     colorLevel = 3; # truecolor, so the hex: values are used exactly rather than downsampled
