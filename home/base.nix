@@ -1,24 +1,81 @@
 { pkgs, lib, config, inputs, ... }:
 
 let
+  # Runs before auto-compaction to record what we were working on. Compaction
+  # summarises the conversation and routinely drops the working state, so this
+  # both injects it back (additionalContext) and appends a durable copy to a log
+  # -- the log matters because we cannot verify that PreCompact honours
+  # additionalContext, but the file is useful either way.
+  claudePreCompactHook = pkgs.writeShellScript "claude-precompact-snapshot" ''
+    set -uo pipefail
+
+    cwd="$(pwd)"
+    branch="$(${pkgs.git}/bin/git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'not a repo')"
+    changed="$(${pkgs.git}/bin/git status --porcelain 2>/dev/null | head -15 | sed 's/^/  /')"
+    [ -z "$changed" ] && changed="  (clean)"
+
+    ctx="Working state at compaction:
+      cwd: $cwd
+      branch: $branch
+    modified files:
+    $changed"
+
+    log="$HOME/.claude/compaction-log"
+    mkdir -p "$log"
+    printf '%s\n%s\n\n' "=== $(date -u +%Y-%m-%dT%H:%M:%SZ) ===" "$ctx" >> "$log/state.log"
+
+    ${pkgs.jq}/bin/jq -nc --arg c "$ctx" '{
+      systemMessage: "Compacting -- working state snapshotted to ~/.claude/compaction-log/state.log",
+      hookSpecificOutput: { hookEventName: "PreCompact", additionalContext: $c }
+    }'
+  '';
+
   # Claude Code's settings.json is hand-maintained (permissions, hooks, plugins)
-  # and Claude Code rewrites it at runtime, so we merge in just the statusLine key
-  # rather than letting home-manager own the whole file.
-  claudeStatusLineSetup = pkgs.writeShellScript "claude-statusline-setup" ''
+  # and Claude Code rewrites it at runtime, so we merge in only the keys we own
+  # rather than letting home-manager take the whole file. Both merges live in one
+  # script so there is no ordering hazard between two writers.
+  claudeSettingsSetup = pkgs.writeShellScript "claude-settings-setup" ''
     set -euo pipefail
     settings="$1"
-    cmd="$2"
+    statusCmd="$2"
+    preCompactCmd="$3"
 
     mkdir -p "$(dirname "$settings")"
     [ -e "$settings" ] || printf '{}\n' > "$settings"
 
     if ! ${pkgs.jq}/bin/jq -e . "$settings" >/dev/null 2>&1; then
-      echo "warning: $settings is not valid JSON; leaving statusLine unset" >&2
+      echo "warning: $settings is not valid JSON; leaving it unchanged" >&2
       exit 0
     fi
 
-    merged="$(${pkgs.jq}/bin/jq --arg cmd "$cmd" \
-      '.statusLine = { type: "command", command: $cmd }' "$settings")"
+    # Drop any previous entry of ours (the store path changes every rebuild, so
+    # match on the script name) before re-adding, to stay idempotent without
+    # clobbering hand-written PreCompact hooks.
+    merged="$(${pkgs.jq}/bin/jq \
+      --arg statusCmd "$statusCmd" \
+      --arg preCompactCmd "$preCompactCmd" '
+      .statusLine = { type: "command", command: $statusCmd }
+      # Lets the plan-approval dialog offer "clear context", which clears the
+      # conversation and carries the plan forward as an auto-continuation. This is
+      # the only built-in path that clears context with a handoff -- no hook can.
+      | .showClearContextOnPlanAccept = true
+      # Injects the live remaining-context count after each tool result, so Claude
+      # can see what the Ctx(u) status line widget shows and call a handoff before
+      # auto-compaction fires. The status line itself is UI-only and never reaches
+      # the model. Marked @internal and server-gated; if it appears inert, force it
+      # with env.CLAUDE_CODE_TOTAL_TOKENS_REMINDER = "countdown", which overrides.
+      | .totalTokensReminder = "countdown"
+      | .hooks //= {}
+      | .hooks.PreCompact = (
+          ((.hooks.PreCompact // [])
+            | map(select(
+                [.hooks[]?.command // ""]
+                | map(test("claude-precompact-snapshot")) | any | not
+              )))
+          + [ { matcher: "auto",
+                hooks: [ { type: "command", command: $preCompactCmd } ] } ]
+        )
+    ' "$settings")"
 
     # Rewrite in place so the file keeps its permissions and stays writable.
     printf '%s\n' "$merged" > "$settings"
@@ -127,8 +184,12 @@ in
         { id = "22"; type = "extra-usage-remaining"; color = "hex:a6d189"; }
         { id = "23"; type = "separator"; color = "hex:838ba7"; }
         { id = "24"; type = "session-cost"; color = "hex:8caaee"; }
-        { id = "25"; type = "separator"; color = "hex:838ba7"; }
-        { id = "26"; type = "reset-timer"; color = "hex:a5adce"; } # 5hr block
+        # Deliberately no reset/block timer here. "reset-timer" counts down the
+        # local 5hr rolling block, which never binds on this account (the usage
+        # API returns sessionUsage: 0 on every fetch -- spend goes to the overage
+        # pool instead). The pool's own reset date, which claude.ai shows, is not
+        # displayable: the API sends no reset timestamps and ccstatusline has no
+        # extra-usage reset field.
       ]
       [ ]
     ];
@@ -141,11 +202,12 @@ in
 
   # After installPackages so the ccstatusline binary the path points at already
   # exists on a first-time sync.
-  home.activation.claudeCodeStatusLine =
+  home.activation.claudeCodeSettings =
     lib.hm.dag.entryAfter [ "writeBoundary" "installPackages" ] ''
-      run ${claudeStatusLineSetup} \
+      run ${claudeSettingsSetup} \
         "${config.home.homeDirectory}/.claude/settings.json" \
-        "${config.home.homeDirectory}/.nix-profile/bin/ccstatusline"
+        "${config.home.homeDirectory}/.nix-profile/bin/ccstatusline" \
+        "${claudePreCompactHook}"
     '';
 
   programs.zsh = {
