@@ -28,6 +28,40 @@
               # direnv's fish integration test is killed by the macOS sandbox
               direnv = prev.direnv.overrideAttrs (_: { doCheck = false; });
 
+              # not yet packaged in nixpkgs: https://github.com/sirmalloc/ccstatusline
+              # a single bun-bundled ESM file with no runtime deps, so we just
+              # install the prebuilt npm artifact and wrap it with node.
+              ccstatusline = prev.stdenvNoCC.mkDerivation rec {
+                pname = "ccstatusline";
+                version = "2.2.27";
+
+                src = prev.fetchurl {
+                  url = "https://registry.npmjs.org/ccstatusline/-/ccstatusline-${version}.tgz";
+                  hash = "sha256-T2Cb3tENjBBkUWzvuQLtWTkasru6l9WT6KEtB+LaWMI=";
+                };
+
+                nativeBuildInputs = [ prev.makeBinaryWrapper ];
+
+                dontBuild = true;
+
+                installPhase = ''
+                  runHook preInstall
+
+                  install -Dm644 dist/ccstatusline.js $out/libexec/ccstatusline/ccstatusline.js
+                  makeWrapper ${prev.nodejs}/bin/node $out/bin/ccstatusline \
+                    --add-flags $out/libexec/ccstatusline/ccstatusline.js
+
+                  runHook postInstall
+                '';
+
+                meta = {
+                  description = "Customizable status line formatter for Claude Code";
+                  homepage = "https://github.com/sirmalloc/ccstatusline";
+                  license = prev.lib.licenses.mit;
+                  mainProgram = "ccstatusline";
+                };
+              };
+
               # not yet packaged in nixpkgs: https://github.com/simonw/claude-code-transcripts
               claude-code-transcripts = prev.python3Packages.buildPythonApplication rec {
                 pname = "claude-code-transcripts";

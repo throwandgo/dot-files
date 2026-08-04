@@ -1,5 +1,29 @@
 { pkgs, lib, config, inputs, ... }:
 
+let
+  # Claude Code's settings.json is hand-maintained (permissions, hooks, plugins)
+  # and Claude Code rewrites it at runtime, so we merge in just the statusLine key
+  # rather than letting home-manager own the whole file.
+  claudeStatusLineSetup = pkgs.writeShellScript "claude-statusline-setup" ''
+    set -euo pipefail
+    settings="$1"
+    cmd="$2"
+
+    mkdir -p "$(dirname "$settings")"
+    [ -e "$settings" ] || printf '{}\n' > "$settings"
+
+    if ! ${pkgs.jq}/bin/jq -e . "$settings" >/dev/null 2>&1; then
+      echo "warning: $settings is not valid JSON; leaving statusLine unset" >&2
+      exit 0
+    fi
+
+    merged="$(${pkgs.jq}/bin/jq --arg cmd "$cmd" \
+      '.statusLine = { type: "command", command: $cmd }' "$settings")"
+
+    # Rewrite in place so the file keeps its permissions and stays writable.
+    printf '%s\n' "$merged" > "$settings"
+  '';
+in
 {
   home.sessionVariables = {
     EDITOR = "nvim";
@@ -21,6 +45,7 @@
     asciinema # generating gifs from terminal sessions
     asciinema-agg # same as above
     bat # better cat
+    ccstatusline # claude code status line
     claude-code # llm programming
     coreutils # gnu core utilities
     devenv # nix dev env
@@ -61,6 +86,52 @@
   };
 
   programs.starship.enable = true;
+
+  # Claude Code status line layout. ccstatusline hardcodes this path under $HOME
+  # (it ignores XDG_CONFIG_HOME), and home-manager makes it a read-only symlink,
+  # so `ccstatusline`'s TUI editor cannot save over it. To experiment, run
+  # `ccstatusline --config /tmp/cc.json` and copy the result back here.
+  home.file.".config/ccstatusline/settings.json".text = builtins.toJSON {
+    version = 3; # matches ccstatusline's CURRENT_VERSION, so it never rewrites this file
+    # Catppuccin Frappe (matching wezterm.lua) as "hex:RRGGBB" -- note ccstatusline
+    # wants the hex: prefix and no leading '#'. The built-in named colors resolve to
+    # a fixed ansi256 palette that is far too dark against Frappe's #303446 base
+    # (brightBlack lands at 1.69:1, magenta at 1.87:1). These all clear 5:1.
+    lines = [
+      [
+        { id = "1"; type = "model"; color = "hex:99d1db"; } # sky, 7.33:1
+        { id = "2"; type = "separator"; color = "hex:838ba7"; }
+        # Denominator is 80% of the window, which is the auto-compact trigger:
+        # 100% here means compaction is happening right now. Plain
+        # "context-percentage" measures the raw window and reads ~20% lower.
+        { id = "3"; type = "context-percentage-usable"; color = "hex:a6d189"; } # green, 7.10:1
+        { id = "4"; type = "separator"; color = "hex:838ba7"; }
+        { id = "5"; type = "context-length"; color = "hex:a5adce"; } # subtext0, 5.55:1
+        { id = "6"; type = "separator"; color = "hex:838ba7"; }
+        { id = "7"; type = "compaction-counter"; color = "hex:ef9f76"; } # peach, 5.80:1
+        { id = "8"; type = "separator"; color = "hex:838ba7"; }
+        { id = "9"; type = "git-branch"; color = "hex:ca9ee6"; } # mauve, 5.60:1
+        { id = "10"; type = "separator"; color = "hex:838ba7"; }
+        { id = "11"; type = "git-changes"; color = "hex:e5c890"; } # yellow, 7.62:1
+      ]
+      [ ]
+      [ ]
+    ];
+    colorLevel = 3; # truecolor, so the hex: values are used exactly rather than downsampled
+    # Use the full terminal width until context reaches compactThreshold, then
+    # leave room for Claude Code's auto-compact warning.
+    flexMode = "full-until-compact";
+    compactThreshold = 60;
+  };
+
+  # After installPackages so the ccstatusline binary the path points at already
+  # exists on a first-time sync.
+  home.activation.claudeCodeStatusLine =
+    lib.hm.dag.entryAfter [ "writeBoundary" "installPackages" ] ''
+      run ${claudeStatusLineSetup} \
+        "${config.home.homeDirectory}/.claude/settings.json" \
+        "${config.home.homeDirectory}/.nix-profile/bin/ccstatusline"
+    '';
 
   programs.zsh = {
     enable = true;
