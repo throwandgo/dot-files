@@ -27,6 +27,39 @@
               };
               # direnv's fish integration test is killed by the macOS sandbox
               direnv = prev.direnv.overrideAttrs (_: { doCheck = false; });
+
+              # not yet packaged in nixpkgs: https://github.com/simonw/claude-code-transcripts
+              claude-code-transcripts = prev.python3Packages.buildPythonApplication rec {
+                pname = "claude-code-transcripts";
+                version = "0.6";
+                pyproject = true;
+
+                src = prev.fetchPypi {
+                  pname = "claude_code_transcripts";
+                  inherit version;
+                  hash = "sha256-xM81zX8Cv2txy1d8CjmtJaGE7q8T7GosjWzcKQAyQ5A=";
+                };
+
+                build-system = [ prev.python3Packages.uv-build ];
+
+                dependencies = with prev.python3Packages; [
+                  click
+                  click-default-group
+                  httpx
+                  jinja2
+                  markdown
+                  questionary
+                ];
+
+                pythonImportsCheck = [ "claude_code_transcripts" ];
+
+                meta = {
+                  description = "Convert Claude Code session files to HTML transcripts";
+                  homepage = "https://github.com/simonw/claude-code-transcripts";
+                  license = prev.lib.licenses.asl20;
+                  mainProgram = "claude-code-transcripts";
+                };
+              };
             })
           ];
         };

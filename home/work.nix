@@ -5,6 +5,7 @@
 
   home.packages = with pkgs; [
     awscli2 # aws cli
+    claude-code-transcripts # convert claude code sessions to html transcripts
     gitify # github notification app
     orbstack # lightweight docker desktop replacement
     ssm-session-manager-plugin # aws ssm
