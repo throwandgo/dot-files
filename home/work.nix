@@ -4,10 +4,13 @@
   imports = [ ./base.nix ];
 
   home.packages = with pkgs; [
+    awscli2 # aws cli
     gitify # github notification app
     orbstack # lightweight docker desktop replacement
+    ssm-session-manager-plugin # aws ssm
+    uv # python package manager
 
-    # The below GIU apps are not available yet via nixpkgs on darwin.
+    # The below GUI apps are not available yet via nixpkgs on darwin.
     # - AWS VPN
     # - ZeroTier VPN
   ];
