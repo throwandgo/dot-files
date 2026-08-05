@@ -144,15 +144,12 @@ in
 
   programs.starship.enable = true;
 
-  # Global Claude Code instructions, version-controlled in this repo. Deliberately an
-  # out-of-store symlink rather than a plain home.file: the store is read-only, and
-  # this file has to stay writable so Claude Code's `#` shortcut and ordinary edits
-  # work -- they land in the repo, where git tracks them. The target must be a string,
-  # not a path literal; mkOutOfStoreSymlink does toString, and a path literal inside a
-  # flake resolves to the store copy of the flake source.
-  home.file.".claude/CLAUDE.md".source =
-    config.lib.file.mkOutOfStoreSymlink
-      "${config.home.homeDirectory}/.config/home-manager/claude/CLAUDE.md";
+  # Global Claude Code instructions. Same shape as the extra.zsh hook above: this file
+  # is just a pointer, and the real content lives in the repo where git tracks it.
+  # CLAUDE.md's @ syntax imports the target the way `source` pulls in extra.zsh.
+  home.file.".claude/CLAUDE.md".text = ''
+    @${config.home.homeDirectory}/.config/home-manager/claude/CLAUDE.md
+  '';
 
   # Claude Code status line layout. ccstatusline hardcodes this path under $HOME
   # (it ignores XDG_CONFIG_HOME), and home-manager makes it a read-only symlink,
