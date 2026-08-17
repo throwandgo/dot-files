@@ -1,6 +1,98 @@
 { pkgs, lib, config, inputs, ... }:
 
 let
+  # Copilot's "default" mode uses the terminal's Base-16/ANSI palette. WezTerm
+  # supplies that palette through its Catppuccin Frappe color scheme.
+  copilotTheme = "default";
+
+  # Hide the native footer fields because Copilot renders them at opposite ends
+  # of the terminal. The custom status line below the prompt keeps them together.
+  copilotFooter = builtins.toJSON {
+    showModelEffort = false;
+    showDirectory = false;
+    showBranch = false;
+    showContextWindow = false;
+    showQuota = false;
+    showAgent = false;
+    showAiUsed = false;
+    showCodeChanges = false;
+    showUsername = false;
+    showSandbox = false;
+    showYolo = false;
+    showCustom = true;
+  };
+
+  copilotStatusLine = pkgs.writeShellScript "copilot-status-line" ''
+    set -euo pipefail
+
+    status="$(cat)"
+    model="$(${pkgs.jq}/bin/jq -r '.model.display_name // "Unknown model"' <<< "$status")"
+    contextRaw="$(${pkgs.jq}/bin/jq -r '.context_window.current_context_used_percentage // .context_window.used_percentage // 0' <<< "$status")"
+    aiUsed="$(${pkgs.jq}/bin/jq -r '.ai_used.formatted // "0 AI credits"' <<< "$status")"
+    added="$(${pkgs.jq}/bin/jq -r '.cost.total_lines_added // 0' <<< "$status")"
+    removed="$(${pkgs.jq}/bin/jq -r '.cost.total_lines_removed // 0' <<< "$status")"
+    branch="$(${pkgs.git}/bin/git branch --show-current 2>/dev/null || true)"
+
+    context="$(LC_ALL=C awk -v value="$contextRaw" 'BEGIN {
+      if (value !~ /^[0-9]+([.][0-9]+)?$/) value = 0
+      value = int(value + 0.5)
+      if (value < 0) value = 0
+      if (value > 100) value = 100
+      print value
+    }')"
+    contextFilled=$((context * 10 / 100))
+    contextEmpty=$((10 - contextFilled))
+    contextBar="$(printf '%*s' "$contextFilled" "" | tr ' ' '█')$(printf '%*s' "$contextEmpty" "" | tr ' ' '░')"
+
+    reset='\033[0m'
+    muted='\033[38;2;131;139;167m'
+    modelColor='\033[38;2;153;209;219m'
+    green='\033[38;2;166;209;137m'
+    yellow='\033[38;2;229;200;144m'
+    red='\033[38;2;231;130;132m'
+    mauve='\033[38;2;202;158;230m'
+
+    contextColor="$green"
+    [ "$context" -ge 60 ] && contextColor="$yellow"
+    [ "$context" -ge 85 ] && contextColor="$red"
+
+    line="$modelColor$model$reset $muted· context$reset $contextColor$context% $contextBar$reset $muted· session$reset $yellow$aiUsed$reset $muted·$reset $green+$added$reset $red-$removed$reset"
+    [ -n "$branch" ] && line="$line $muted·$reset $mauve$branch$reset"
+    printf '%b\n' "$line"
+  '';
+
+  copilotStatusLineConfig = builtins.toJSON {
+    type = "command";
+    command = "${copilotStatusLine}";
+  };
+
+  # Copilot rewrites settings.json at runtime, so manage our setting by merging
+  # it during activation instead of making the whole file a read-only symlink.
+  copilotSettingsSetup = pkgs.writeShellScript "copilot-settings-setup" ''
+    set -euo pipefail
+
+    settings="$1"
+    theme="$2"
+    footer="$3"
+    statusLine="$4"
+
+    mkdir -p "$(dirname "$settings")"
+    [ -e "$settings" ] || printf '{}\n' > "$settings"
+
+    if ! ${pkgs.jq}/bin/jq -e . "$settings" >/dev/null 2>&1; then
+      echo "warning: $settings is not valid JSON; leaving it unchanged" >&2
+      exit 0
+    fi
+
+    updated="$(${pkgs.jq}/bin/jq \
+      --arg theme "$theme" \
+      --argjson footer "$footer" \
+      --argjson statusLine "$statusLine" \
+      '.theme = $theme | .footer = $footer | .statusLine = $statusLine' \
+      "$settings")"
+    printf '%s\n' "$updated" > "$settings"
+  '';
+
   # Runs before auto-compaction to record what we were working on. Compaction
   # summarises the conversation and routinely drops the working state, so this
   # both injects it back (additionalContext) and appends a durable copy to a log
@@ -218,6 +310,15 @@ in
         "${claudePreCompactHook}"
     '';
 
+  home.activation.copilotSettings =
+    lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      run ${copilotSettingsSetup} \
+        "${config.home.homeDirectory}/.copilot/settings.json" \
+        "${copilotTheme}" \
+        '${copilotFooter}' \
+        '${copilotStatusLineConfig}'
+    '';
+
   programs.zsh = {
     enable = true;
     autocd = true;
@@ -242,7 +343,8 @@ in
       ];
     };
     shellAliases = {
-      c = "claude";
+      cc = "claude";
+      ghcp = "copilot --yolo";
       v = "nvim";
       vim = "nvim";
       ll = "lsd -l";
