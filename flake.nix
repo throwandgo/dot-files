@@ -28,6 +28,44 @@
               # direnv's fish integration test is killed by the macOS sandbox
               direnv = prev.direnv.overrideAttrs (_: { doCheck = false; });
 
+              # nixpkgs is still on 1.0.61. As of 1.0.80 upstream's release
+              # tarball is a thin npm-loader.js stub that spawns a separate
+              # per-platform native binary shipped as its own npm package, so
+              # nixpkgs' old "universal tarball" derivation no longer applies.
+              # Fetch the darwin-arm64 platform package directly and run its
+              # bundled Mach-O binary in place.
+              github-copilot-cli = prev.stdenvNoCC.mkDerivation rec {
+                pname = "github-copilot-cli";
+                version = "1.0.80";
+
+                src = prev.fetchurl {
+                  url = "https://registry.npmjs.org/@github/copilot-darwin-arm64/-/copilot-darwin-arm64-${version}.tgz";
+                  hash = "sha256-mGQMoN5ldoB/NpxTPIObV0KwOPEFqXC918sNfvyKenE=";
+                };
+
+                sourceRoot = "package";
+                dontBuild = true;
+                dontStrip = true; # preserve the binary's ad-hoc code signature
+
+                installPhase = ''
+                  runHook preInstall
+                  mkdir -p "$out"/libexec/github-copilot-cli
+                  cp -r . "$out"/libexec/github-copilot-cli
+                  mkdir -p "$out"/bin
+                  ln -s "$out"/libexec/github-copilot-cli/copilot "$out"/bin/copilot
+                  runHook postInstall
+                '';
+
+                meta = {
+                  description = "GitHub Copilot CLI brings the power of Copilot coding agent directly to your terminal";
+                  homepage = "https://github.com/github/copilot-cli";
+                  changelog = "https://github.com/github/copilot-cli/releases/tag/v${version}";
+                  license = prev.lib.licenses.unfree;
+                  mainProgram = "copilot";
+                  platforms = [ "aarch64-darwin" ];
+                };
+              };
+
               # not yet packaged in nixpkgs: https://github.com/sirmalloc/ccstatusline
               # a single bun-bundled ESM file with no runtime deps, so we just
               # install the prebuilt npm artifact and wrap it with node.

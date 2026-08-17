@@ -111,6 +111,7 @@ in
     fzf # fuzzy finding across projects
     git-absorb # better git fixup
     gh # github cli
+    github-copilot-cli # github copilot cli
     gnupg # gpg signing
     htop # better top
     jq # json viewing and querying
