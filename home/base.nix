@@ -205,12 +205,14 @@ in
     gh # github cli
     github-copilot-cli # github copilot cli
     gnupg # gpg signing
+    herdr # AI agent orchestration
     htop # better top
     jq # json viewing and querying
     lazygit # interactive git tree viewer
     lsd # better ls
     lua # lang suppuort
     lua51Packages.luarocks-nix # manage lua packages via nix
+    opencode # llm programming
     pass # passwords and gpg signing
     selene # fast lua linter
     ripgrep # better grep
@@ -367,6 +369,11 @@ in
         when = "log -S -i";
       };
       commit.gpgsign = true;
+      # Clear the osxkeychain helper inherited from the Xcode system gitconfig, then use gh.
+      credential."https://github.com".helper = [
+        ""
+        "!/opt/homebrew/bin/gh auth git-credential"
+      ];
       fetch.writeCommitGraph = true;
       init.defaultBranch = "main";
       push.autoSetupRemote = true;
