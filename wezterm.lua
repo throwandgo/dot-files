@@ -5,6 +5,8 @@ return {
   font_size = 14.0,
   front_end = 'WebGpu',
   color_scheme = 'Catppuccin Frappe',
+  default_cursor_style = 'SteadyBlock',
+  cursor_blink_rate = 0,
   line_height = 1.2,
   underline_position = -7,
   use_fancy_tab_bar = false,
