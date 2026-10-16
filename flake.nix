@@ -66,6 +66,34 @@
                 };
               };
 
+              herdr = prev.stdenvNoCC.mkDerivation rec {
+                pname = "herdr";
+                version = "0.9.3";
+
+                src = prev.fetchurl {
+                  url = "https://github.com/herdrdev/herdr/releases/download/v${version}/herdr-macos-aarch64";
+                  hash = "sha256-UXOj4K5C1dGrfr+l1eYyn3w9I/jho2d8fOMjHaKIQVc=";
+                };
+
+                dontUnpack = true;
+                dontBuild = true;
+                dontStrip = true;
+
+                installPhase = ''
+                  runHook preInstall
+                  install -Dm755 "$src" "$out/bin/herdr"
+                  runHook postInstall
+                '';
+
+                meta = {
+                  description = "Terminal workspace manager for AI coding agents";
+                  homepage = "https://herdr.dev";
+                  license = prev.lib.licenses.asl20;
+                  mainProgram = "herdr";
+                  platforms = [ "aarch64-darwin" ];
+                };
+              };
+
               # not yet packaged in nixpkgs: https://github.com/sirmalloc/ccstatusline
               # a single bun-bundled ESM file with no runtime deps, so we just
               # install the prebuilt npm artifact and wrap it with node.
