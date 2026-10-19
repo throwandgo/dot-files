@@ -27,28 +27,3 @@ if ! command -v home-manager &>/dev/null; then
 else
   home-manager switch --flake .#${FLAKE_TARGET}
 fi
-
-if [[ "$(uname)" == "Darwin" ]]; then
-  HOME_APPS="$HOME"/Applications
-  NIX_APPS="$HOME"/.nix-profile/Applications
-
-  # remove broken links
-  for f in "$HOME_APPS"/*; do
-    if [ -L "$f" ] && [ ! -e "$f" ]; then
-      rm "$f"
-    fi
-  done
-
-  # link new ones as Finder aliases
-  for f in "$NIX_APPS"/*; do
-    app_name="$(basename "$f")"
-    target_alias="$HOME_APPS/$app_name"
-
-    if [ ! -e "$target_alias" ]; then
-      echo "Creating Finder alias for $app_name"
-      osascript -e "tell application \"Finder\" to make alias file to POSIX file \"$f\" at POSIX file \"$HOME_APPS\""
-    else
-      echo "Alias for $app_name already exists"
-    fi
-  done
-fi
