@@ -6,6 +6,8 @@
       url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Spotlight/Raycast-indexable launchers for Nix-installed apps.
+    mac-app-util.url = "github:hraban/mac-app-util";
   };
 
   outputs = { nixpkgs, unstable, home-manager, ... }@inputs:
@@ -169,6 +171,7 @@
         inherit pkgs;
         modules = [
           nixpkgsModule
+          inputs.mac-app-util.homeManagerModules.default
           machineModule
           {
             home.username = username;
