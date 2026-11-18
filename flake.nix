@@ -38,11 +38,11 @@
               # bundled Mach-O binary in place.
               github-copilot-cli = prev.stdenvNoCC.mkDerivation rec {
                 pname = "github-copilot-cli";
-                version = "1.0.80";
+                version = "1.0.104";
 
                 src = prev.fetchurl {
                   url = "https://registry.npmjs.org/@github/copilot-darwin-arm64/-/copilot-darwin-arm64-${version}.tgz";
-                  hash = "sha256-mGQMoN5ldoB/NpxTPIObV0KwOPEFqXC918sNfvyKenE=";
+                  hash = "sha256-q/zgRu9RDjEdAAx0kWLzjG0te0huM8xRPvUjRCRM+C4=";
                 };
 
                 sourceRoot = "package";
