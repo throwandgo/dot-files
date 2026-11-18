@@ -5,12 +5,14 @@
 
   home.packages = with pkgs; [
     awscli2 # aws cli
+    chess-tui # terminal chess against Stockfish
     claude-code-transcripts # convert claude code sessions to html transcripts
     gitify # github notification app
     helmfile # declarative spec for deploying helm charts
     kubernetes-helm # helm cli
     orbstack # lightweight docker desktop replacement
     ssm-session-manager-plugin # aws ssm
+    stockfish # chess engine
     tenv # terraform/opentofu/terragrunt/atmos version manager (tfenv's nixpkgs successor)
     uv # python package manager
 
