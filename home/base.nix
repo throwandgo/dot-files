@@ -239,6 +239,12 @@ in
 
   programs.starship.enable = true;
 
+  # dev env manager (outside of nix); unstable because repo mise plugins track recent releases
+  programs.mise = {
+    enable = true;
+    package = pkgs.unstable.mise;
+  };
+
   # Global Claude Code instructions. Same shape as the extra.zsh hook above: this file
   # is just a pointer, and the real content lives in the repo where git tracks it.
   # CLAUDE.md's @ syntax imports the target the way `source` pulls in extra.zsh.
