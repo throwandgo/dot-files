@@ -183,7 +183,7 @@ in
   home.packages = with pkgs; [
     firefox # browser
     obsidian # notes
-    spotify # music streaming
+    unstable.spotify # music streaming; unstable to lag less behind the client's self-updates
     raycast # spotlight replacement
 
     # The below GUI apps are not available yet via nixpkgs on darwin.
