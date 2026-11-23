@@ -10,7 +10,9 @@ function M.run(fn)
   coroutine.wrap(function()
     local ok, err = xpcall(fn, debug.traceback)
     if not ok then
-      M.notify(tostring(err):gsub("\nstack traceback:.*", ""), vim.log.levels.ERROR)
+      -- user-facing message: no traceback, no "init.lua:427: " position prefix
+      local msg = tostring(err):gsub("\nstack traceback:.*", ""):gsub("^[^\n]-%.lua:%d+: ", "")
+      M.notify(msg, vim.log.levels.ERROR)
     end
   end)()
 end

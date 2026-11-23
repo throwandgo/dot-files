@@ -38,7 +38,7 @@ query($owner: String!, $name: String!, $number: Int!) {
         nodes {
           id path line startLine isResolved isOutdated subjectType
           viewerCanReply viewerCanResolve viewerCanUnresolve
-          comments(first: 30) { nodes { author { login } body state } }
+          comments(first: 30) { nodes { id author { login } body state viewerCanDelete } }
         }
       }
     }
@@ -69,6 +69,11 @@ mutation($input: UnresolveReviewThreadInput!) {
 M.ADD_PENDING = [[
 mutation($input: AddPullRequestReviewInput!) {
   addPullRequestReview(input: $input) { pullRequestReview { id } }
+}]]
+
+M.DELETE_COMMENT = [[
+mutation($input: DeletePullRequestReviewCommentInput!) {
+  deletePullRequestReviewComment(input: $input) { clientMutationId }
 }]]
 
 M.MARK_VIEWED = [[

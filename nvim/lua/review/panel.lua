@@ -394,7 +394,7 @@ function M.render()
   -- stylua: ignore
   for _, group in ipairs({
     { "Move",    { "<CR>", "open", "n", "next unviewed", "h", "hunks" }, { "]r [r", "next/prev file" } },
-    { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "R", "reply", "X", "resolve / reopen" } },
+    { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "R", "reply", "X", "resolve", "D", "delete pending" } },
     { "Explore", { "K", "details", "i", "impact", "a", "ask agent" } },
     { "Panel",   { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end" } },
   }) do
@@ -526,6 +526,7 @@ local function create_buf()
   end
   map("R", on_thread(review().reply), "Reply to thread")
   map("X", on_thread(review().toggle_resolved), "Resolve / reopen thread")
+  map("D", on_thread(review().delete_pending), "Delete pending comment")
   map("r", function()
     util.run(review().refresh_threads)
   end, "Refresh")
@@ -634,6 +635,7 @@ local function diff_keys(b)
     { "c", function() review().comment() end, "Comment on line" },
     { "R", function() review().reply() end, "Reply to thread on line" },
     { "X", function() review().toggle_resolved() end, "Resolve / reopen thread on line" },
+    { "D", function() review().delete_pending() end, "Delete pending comment on line" },
     { "K", function() review().show_description() end, "PR description" },
     { "h", function() local st = review().active() Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root, cmd_args = { "-w" } }) end, "Changed hunks" },
     { "i", function() require("review.impact").open() end, "Impact (callers)" },

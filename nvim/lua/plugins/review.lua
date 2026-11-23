@@ -45,6 +45,13 @@ return {
         desc = "PR Resolve / reopen thread",
       },
       {
+        "<leader>gu",
+        function()
+          require("review").delete_pending()
+        end,
+        desc = "PR Undo (delete) pending comment",
+      },
+      {
         "<leader>gi",
         function()
           require("review.impact").open()

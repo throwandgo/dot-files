@@ -414,7 +414,7 @@ end
 
 --- The thread to act on: `t` when given (the panel passes it), else the thread on the cursor line
 --- of the review file, resolved ones included so they can be reopened. Asks when several match.
-local function pick_thread(t, prompt)
+local function pick_thread(t, prompt, keep, none)
   if t then
     return t
   end
@@ -422,9 +422,9 @@ local function pick_thread(t, prompt)
   assert(st and rel, "Not a file in the active review")
   local found = vim.tbl_filter(function(x)
     local l1, l2 = M.thread_lines(x)
-    return x.path == rel and l1 ~= nil and l1 <= lnum and lnum <= l2
+    return x.path == rel and l1 ~= nil and l1 <= lnum and lnum <= l2 and (not keep or keep(x))
   end, st.threads or {})
-  assert(#found > 0, "No comment thread on this line")
+  assert(#found > 0, none or "No comment thread on this line")
   table.sort(found, function(a, b)
     return not a.isResolved and b.isResolved
   end)
@@ -461,6 +461,42 @@ function M.reply(t)
         M.refresh_threads()
       end)
     end)
+  end)
+end
+
+local function pending_comments(t)
+  return vim.tbl_filter(function(c)
+    return c.state == "PENDING" and c.viewerCanDelete
+  end, t.comments and t.comments.nodes or {})
+end
+
+--- Delete one of your pending (unsubmitted) comments or replies on the cursor line (or in `t`),
+--- after confirming. A pending thread goes away with its only comment.
+function M.delete_pending(t)
+  run(function()
+    t = pick_thread(t, "Delete a pending comment in", function(x)
+      return #pending_comments(x) > 0
+    end, "No pending comment of yours on this line")
+    if not t then
+      return
+    end
+    local mine = pending_comments(t)
+    assert(#mine > 0, "No pending comment of yours in this thread")
+    local function preview(c)
+      return vim.trim((c.body:gsub("^`L%d+%-?L?%d*`:%s*", ""):gsub("%s+", " "))):sub(1, 80)
+    end
+    local c = #mine == 1 and mine[1]
+      or util.select(mine, { prompt = "Delete which pending comment?", format_item = preview })
+    if not c then
+      return
+    end
+    local choice = util.select({ "Delete", "Cancel" }, { prompt = ("Delete pending comment: %s"):format(preview(c)) })
+    if choice ~= "Delete" then
+      return
+    end
+    gh.graphql(gh.DELETE_COMMENT, { input = { id = c.id } })
+    notify("Pending comment deleted")
+    M.refresh_threads()
   end)
 end
 
