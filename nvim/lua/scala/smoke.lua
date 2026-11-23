@@ -141,6 +141,12 @@ local function steps(dir, check)
 
   check(vim.tbl_get(_G, "LazyVim", "pick", "picker", "name") == "snacks", "picker is snacks")
 
+  if vim.fn.executable("zoekt-webserver") == 1 then
+    local err, status, list = require("search.zoekt").post_sync("/api/list", { Q = "" }, 2000)
+    local repos = vim.tbl_get(list or {}, "List", "Repos") or {}
+    check(not err and status == 200 and #repos > 0, ("zoekt serves an index (%s)"):format(err or status))
+  end
+
   local root_failures = require("scala.fixture").check_roots(dir)
   check(#root_failures == 0, "build roots: " .. (#root_failures == 0 and "ok" or table.concat(root_failures, "; ")))
 
@@ -156,6 +162,10 @@ local function steps(dir, check)
   end
   local metals = lsp_clients("metals")
   check(#metals == 1, ("exactly one metals client (got %d)"):format(#metals))
+  check(
+    vim.fn.maparg(" sS", "n", false, true).desc == "Symbols (repo, indexed)",
+    "<leader>sS stays repo-wide symbols in LSP buffers"
+  )
   check(metals[1].root_dir == sbt_root, ("metals root is the aggregating build (got %s)"):format(metals[1].root_dir))
   for name, r in pairs(guards.patches) do
     check(r.ok, ("patch %s applies"):format(name))
