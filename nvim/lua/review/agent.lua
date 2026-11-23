@@ -19,7 +19,8 @@ local severity = {
 
 local PROMPT = [[
 You are a senior engineer reviewing pull request #%d "%s" by @%s.
-The change is exactly `git diff %s HEAD` in this repository; run it first. PR description:
+The change is exactly `git diff -w %s HEAD` in this repository (whitespace-only edits are hidden
+from the reviewer, so ignore them); run it first. PR description:
 <<<
 %s
 >>>

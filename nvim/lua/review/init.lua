@@ -56,10 +56,40 @@ function M.relpath(buf)
   return st and file ~= "" and vim.fs.relpath(st.root, file) or nil
 end
 
---- Main checkout for the current directory (worktrees resolve to the repo they belong to).
-local function source_repo()
-  local common = sh({ "git", "rev-parse", "--path-format=absolute", "--git-common-dir" }, { cwd = vim.fn.getcwd() })
+--- Main checkout for `dir` (worktrees resolve to the repo they belong to).
+local function main_checkout(dir)
+  local common = sh({ "git", "rev-parse", "--path-format=absolute", "--git-common-dir" }, { cwd = dir })
   return vim.fs.dirname(common)
+end
+
+local function origin_is(dir, nwo)
+  local r = vim.system({ "git", "-C", dir, "remote", "get-url", "origin" }, { text = true }):wait()
+  local url = r.code == 0 and vim.trim(r.stdout):lower():gsub("%.git$", "") or ""
+  return url:sub(-#nwo - 1) == "/" .. nwo:lower() or url:sub(-#nwo - 1) == ":" .. nwo:lower()
+end
+
+--- Local checkout of GitHub repo `nwo` ("owner/name"); without it, the current directory's repo.
+--- Looks in the current repo, `vim.g.review_checkouts[nwo]`, then ~/<name>.
+local function source_repo(nwo)
+  if not nwo then
+    return main_checkout(vim.fn.getcwd())
+  end
+  local cwd_ok, cwd = pcall(main_checkout, vim.fn.getcwd())
+  local candidates = {
+    cwd_ok and cwd or nil,
+    (vim.g.review_checkouts or {})[nwo],
+    vim.fs.joinpath(vim.env.HOME, nwo:match("/(.+)$")),
+  }
+  for _, dir in pairs(candidates) do
+    dir = vim.fs.normalize(dir)
+    if vim.uv.fs_stat(vim.fs.joinpath(dir, ".git")) and origin_is(dir, nwo) then
+      return dir
+    end
+  end
+  error(
+    ("No local checkout of %s (clone it to ~/%s or set vim.g.review_checkouts)"):format(nwo, nwo:match("/(.+)$")),
+    0
+  )
 end
 
 local function worktree(src)
@@ -201,9 +231,10 @@ function M.show_description()
   })
 end
 
---- Per-file change status and line counts, and the first line of each hunk.
+--- Per-file change status and line counts, and the first line of each hunk, ignoring whitespace
+--- (like GitHub's "Hide whitespace"): files whose only edits are whitespace get no entry.
 local function diff_info(root, base, head)
-  local stats, hunks = {}, {}
+  local stats, hunks, counted = {}, {}, {}
   for _, l in
     ipairs(vim.split(sh({ "git", "diff", "--name-status", base, head }, { cwd = root }), "\n", { trimempty = true }))
   do
@@ -211,16 +242,25 @@ local function diff_info(root, base, head)
     stats[parts[#parts]] = { status = parts[1]:sub(1, 1) }
   end
   for _, l in
-    ipairs(vim.split(sh({ "git", "diff", "--numstat", base, head }, { cwd = root }), "\n", { trimempty = true }))
+    ipairs(vim.split(sh({ "git", "diff", "-w", "--numstat", base, head }, { cwd = root }), "\n", { trimempty = true }))
   do
     local add, del, path = l:match("^(%S+)%s+(%S+)%s+(.+)$")
     path = path and path:gsub("^(.-){(.-) => (.-)}(.*)$", "%1%3%4"):gsub("^.* => ", "")
-    if path and stats[path] and add ~= "-" then
-      stats[path].add, stats[path].del = add, del
+    if path and stats[path] then
+      counted[path] = true
+      if add ~= "-" then
+        stats[path].add, stats[path].del = add, del
+      end
+    end
+  end
+  -- --name-status ignores -w; a modified file -w drops from --numstat changed only whitespace
+  for path, s in pairs(stats) do
+    if s.status == "M" and not counted[path] then
+      stats[path] = nil
     end
   end
   local file
-  for l in vim.gsplit(sh({ "git", "diff", "-U0", "--no-color", base, head }, { cwd = root }), "\n") do
+  for l in vim.gsplit(sh({ "git", "diff", "-w", "-U0", "--no-color", base, head }, { cwd = root }), "\n") do
     if l:match("^%+%+%+ ") then
       file = l:match("^%+%+%+ b/(.+)$") -- nil for deletions
     end
@@ -233,25 +273,16 @@ local function diff_info(root, base, head)
   return stats, hunks
 end
 
---- Open PR `ref` (number or URL) for review. Without `ref`, pick from PRs awaiting your review.
+--- Open PR `ref` (number or URL) for review. Without `ref`, pick from PRs waiting on you.
 function M.start(ref)
   if not ref then
-    return Snacks.picker.gh_pr({
-      title = "  Review requested",
-      search = "review-requested:@me",
-      confirm = function(picker, item)
-        picker:close()
-        if item then
-          M.start(item.number)
-        end
-      end,
-    })
+    return require("review.inbox").open()
   end
   run(function()
     ref = vim.trim(tostring(ref))
     local number = tonumber(ref:match("/pull/(%d+)") or ref:match("^#?(%d+)$"))
     assert(number, "Not a PR number or URL: " .. tostring(ref))
-    local src = source_repo()
+    local src = source_repo(ref:match("github%.com/([^/]+/[^/]+)/pull/"))
     notify(("Fetching PR #%d…"):format(number))
     local pr = gh.json({
       "pr",
@@ -299,7 +330,12 @@ function M.start(ref)
       merge_base = merge_base,
       root = root,
       tab = -1, -- set by panel.open_view
-      files = require("review.rank").sort(vim.split(files, "\n", { trimempty = true })),
+      files = require("review.rank").sort(vim.tbl_filter(function(p)
+        return stats[p] ~= nil
+      end, vim.split(files, "\n", { trimempty = true }))),
+      whitespace_only = #vim.tbl_filter(function(p)
+        return stats[p] == nil
+      end, vim.split(files, "\n", { trimempty = true })),
       stats = stats,
       hunks = hunks,
       viewed = {},
@@ -307,6 +343,7 @@ function M.start(ref)
     }
     local panel = require("review.panel")
     panel.open_view(M.state)
+    M.sync_diffopt()
     panel.show()
     M.show_description()
     require("review.agent").start(M.state)
@@ -424,6 +461,7 @@ function M.close()
     pcall(job.kill, job, 15)
   end
   M.state = nil
+  M.sync_diffopt()
   for _, v in ipairs(package.loaded["diffview.lib"] and require("diffview.lib").views or {}) do
     if v.tabpage == st.tab then
       v:close()
@@ -434,6 +472,22 @@ function M.close()
     if (vim.fs.relpath(st.root, name) or name:match("^review://")) and not vim.bo[buf].modified then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end
+  end
+end
+
+local added_iwhite = false
+
+--- Diffs in the review tab ignore whitespace; elsewhere 'diffopt' (global) is left as the user had it.
+function M.sync_diffopt()
+  local st = M.active()
+  local in_review = st and vim.api.nvim_get_current_tabpage() == st.tab
+  local has = vim.tbl_contains(vim.opt.diffopt:get(), "iwhiteall")
+  if in_review and not has then
+    vim.opt.diffopt:append("iwhiteall")
+    added_iwhite = true
+  elseif not in_review and added_iwhite then
+    vim.opt.diffopt:remove("iwhiteall")
+    added_iwhite = false
   end
 end
 
@@ -450,7 +504,7 @@ end
 function M.context()
   local st = M.active()
   if st then
-    return ("Reviewing PR #%d %q by @%s (%s). The PR's change is `git diff %s HEAD`."):format(
+    return ("Reviewing PR #%d %q by @%s (%s). The PR's change is `git diff -w %s HEAD` (whitespace ignored)."):format(
       st.number,
       st.title,
       st.author,
@@ -465,6 +519,12 @@ function M.setup()
   vim.api.nvim_create_user_command("Review", function(a)
     M.start(a.args ~= "" and a.args or nil)
   end, { nargs = "?", desc = "Review a GitHub PR (number or URL)" })
+  vim.api.nvim_create_autocmd("TabEnter", {
+    group = group,
+    callback = function()
+      M.sync_diffopt()
+    end,
+  })
   vim.api.nvim_create_autocmd("User", {
     group = group,
     pattern = "GitSignsUpdate",

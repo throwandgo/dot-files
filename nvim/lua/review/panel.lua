@@ -277,10 +277,14 @@ function M.render()
   local viewed = #vim.tbl_filter(function(p)
     return st.viewed[p]
   end, st.files)
-  add(
-    { { "Files ", "ReviewSection" }, { ("%d/%d viewed"):format(viewed, #st.files), "ReviewDim" } },
-    { kind = "files" }
-  )
+  add({
+    { "Files ", "ReviewSection" },
+    { ("%d/%d viewed"):format(viewed, #st.files), "ReviewDim" },
+    {
+      (st.whitespace_only or 0) > 0 and (" · %d whitespace-only hidden"):format(st.whitespace_only) or "",
+      "ReviewDim",
+    },
+  }, { kind = "files" })
   local ok_icons, icons = pcall(require, "mini.icons")
   local rank = require("review.rank")
   local group
@@ -492,7 +496,7 @@ local function create_buf()
   end, "Prev changed file")
   map("h", function()
     local st = review().active()
-    Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root })
+    Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root, cmd_args = { "-w" } })
   end, "Changed hunks")
   map("i", function()
     vim.api.nvim_set_current_win(main_win(review().active()) or 0)
@@ -610,7 +614,7 @@ local function diff_keys(b)
     end, "Toggle viewed (+ next unviewed)" },
     { "c", function() review().comment() end, "Comment on line" },
     { "K", function() review().show_description() end, "PR description" },
-    { "h", function() local st = review().active() Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root }) end, "Changed hunks" },
+    { "h", function() local st = review().active() Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root, cmd_args = { "-w" } }) end, "Changed hunks" },
     { "i", function() require("review.impact").open() end, "Impact (callers)" },
     { "a", function() require("sidekick.cli").prompt() end, "Ask agent" },
     { "s", M.submit, "Submit review" },

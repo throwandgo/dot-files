@@ -146,7 +146,7 @@ function M.fill_partners(buf, notes)
           local function text(b)
             return table.concat(vim.api.nvim_buf_get_lines(b, 0, -1, false), "\n") .. "\n"
           end
-          local hunks = diff(text(ob), text(buf), { result_type = "indices" })
+          local hunks = diff(text(ob), text(buf), { result_type = "indices", ignore_whitespace = true })
           local last = vim.api.nvim_buf_line_count(ob)
           for _, note in ipairs(notes) do
             if note.height then
