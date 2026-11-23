@@ -259,11 +259,8 @@ local function camel(s)
   end))
 end
 
--- From a .proto definition to the protos and Scala/Java code that use it (or what's generated
--- from it).
-function M.usages()
-  local word = vim.fn.expand("<cword>")
-  local line = vim.api.nvim_get_current_line()
+--- Names that generated Scala/Java code uses for the proto symbol `word` declared on `line`.
+function M.usage_names(word, line)
   local names
   if line:match("^%s*rpc%s+" .. word) then
     names = { word, word:sub(1, 1):lower() .. word:sub(2) }
@@ -275,9 +272,16 @@ function M.usages()
   else
     names = { word }
   end
+  return vim.fn.uniq(vim.fn.sort(names))
+end
+
+-- From a .proto definition to the protos and Scala/Java code that use it (or what's generated
+-- from it).
+function M.usages()
+  local word = vim.fn.expand("<cword>")
   require("search.zoekt").grep({
     title = "Usages of " .. word,
-    search = [[\b]] .. alternation(vim.fn.uniq(vim.fn.sort(names))) .. [[\b]],
+    search = [[\b]] .. alternation(M.usage_names(word, vim.api.nvim_get_current_line())) .. [[\b]],
     terms = [[case:yes f:\.(scala|java|sbt|proto)$]],
     glob = { "*.scala", "*.java", "*.sbt", "*.proto" },
     live = false,
