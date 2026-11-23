@@ -233,6 +233,20 @@ local function steps(dir, check)
   )
   vim.api.nvim_set_current_buf(main)
 
+  -- Impact (<leader>gi) maps changed lines to enclosing definitions with treesitter; grammar drift
+  -- would silently empty it.
+  local names = require("review.impact").definitions(dir .. "/sbt/modules/app", {
+    ["src/main/scala/smoke/Main.scala"] = { 6 },
+    ["src/main/scala/smoke/Helper.scala"] = { 4 },
+    ["src/main/protobuf/greeting.proto"] = { 4, 5 },
+    ["src/main/java/smoke/Util.java"] = { 3 },
+  })
+  local got = table.concat(names, " ")
+  check(
+    got == "Greeting Util getText greet setText text total withText",
+    ("impact: changed lines -> definitions and generated names (got %q)"):format(got)
+  )
+
   -- Code-understanding features (gai, gap/gac) lean on Metals' call and type hierarchy.
   local incoming = poll(main, "textDocument/prepareCallHierarchy", function()
     return position_of(main, 4, "run")
