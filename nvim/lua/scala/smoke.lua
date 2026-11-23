@@ -217,6 +217,22 @@ local function steps(dir, check)
   local extra = hints and vim.trim(labels(hints):gsub(":%s*%S+", "")) or ""
   check(hints ~= nil and extra == "", ("no implicit-argument hints (got %q)"):format(hints and labels(hints) or ""))
 
+  -- gas follows the definition into generated code and on to the .proto it came from.
+  vim.api.nvim_set_current_buf(main)
+  vim.api.nvim_win_set_cursor(0, { 7, ("  val greeting: Greeting = "):len() })
+  require("understand").source()
+  local landed = wait(30000, function()
+    return vim.api.nvim_buf_get_name(0):match("greeting%.proto$") ~= nil
+  end)
+  check(
+    landed and vim.api.nvim_get_current_line():match("^message Greeting") ~= nil,
+    ("gas: Greeting -> greeting.proto (got %s:%d)"):format(
+      vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ":t"),
+      vim.api.nvim_win_get_cursor(0)[1]
+    )
+  )
+  vim.api.nvim_set_current_buf(main)
+
   -- Code-understanding features (gai, gap/gac) lean on Metals' call and type hierarchy.
   local incoming = poll(main, "textDocument/prepareCallHierarchy", function()
     return position_of(main, 4, "run")

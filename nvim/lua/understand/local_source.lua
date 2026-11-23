@@ -163,7 +163,7 @@ function M.setup()
       local candidates = M.find(ev.buf)
       if #candidates > 0 then
         vim.notify(
-          ("Editable in this repo: %s  (gaL)"):format(vim.fn.fnamemodify(candidates[1], ":~:.")),
+          ("Editable in this repo: %s  (gas)"):format(vim.fn.fnamemodify(candidates[1], ":~:.")),
           vim.log.levels.INFO,
           { title = "Local source" }
         )

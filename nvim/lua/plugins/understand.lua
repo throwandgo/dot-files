@@ -11,6 +11,7 @@ return {
             { "gap", function() require("understand.hierarchy").pick("supertypes") end, desc = "Supertypes (tree)", has = "prepareTypeHierarchy" },
             { "gac", function() require("understand.hierarchy").pick("subtypes") end, desc = "Subtypes (tree)", has = "prepareTypeHierarchy" },
             { "gau", function() require("understand.hierarchy").super_method() end, desc = "Super Method", has = "definition" },
+            { "gr", function() require("understand").references() end, desc = "References", nowait = true },
           },
         },
       },

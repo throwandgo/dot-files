@@ -27,6 +27,11 @@ local function package_of(lines)
   end
 end
 
+---@param buf integer
+function M.buf_is_generated(buf)
+  return is_generated(vim.api.nvim_buf_get_lines(buf, 0, 5, false))
+end
+
 local function read_head(path, n)
   local buf = vim.fn.bufnr(path)
   if buf > 0 and vim.api.nvim_buf_is_loaded(buf) then
@@ -211,9 +216,10 @@ local function show(matches, title)
 end
 
 -- From generated code (or code using it) to the .proto definition.
-function M.goto_proto()
+---@param word? string defaults to the word under the cursor
+function M.goto_proto(word)
   local buf = vim.api.nvim_get_current_buf()
-  local word = vim.fn.expand("<cword>")
+  word = word or vim.fn.expand("<cword>")
   if word == "" then
     return
   end
@@ -253,7 +259,8 @@ local function camel(s)
   end))
 end
 
--- From a .proto definition to the Scala/Java code that uses what's generated from it.
+-- From a .proto definition to the protos and Scala/Java code that use it (or what's generated
+-- from it).
 function M.usages()
   local word = vim.fn.expand("<cword>")
   local line = vim.api.nvim_get_current_line()
@@ -268,12 +275,12 @@ function M.usages()
   else
     names = { word }
   end
-  Snacks.picker.grep({
+  require("search.zoekt").grep({
     title = "Usages of " .. word,
     search = [[\b]] .. alternation(vim.fn.uniq(vim.fn.sort(names))) .. [[\b]],
-    regex = true,
+    terms = [[case:yes f:\.(scala|java|sbt|proto)$]],
+    glob = { "*.scala", "*.java", "*.sbt", "*.proto" },
     live = false,
-    glob = { "*.scala", "*.java", "*.sbt" },
     cwd = vim.fs.root(0, ".git") or vim.fn.getcwd(),
   })
 end

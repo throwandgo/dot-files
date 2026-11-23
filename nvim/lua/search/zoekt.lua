@@ -325,6 +325,7 @@ end
 ---@class search.zoekt.Opts: snacks.picker.grep.Config
 ---@field word? boolean whole word, case-sensitive
 ---@field symbols? boolean match symbol definitions only
+---@field terms? string extra zoekt terms (`f:\.scala$ case:yes`); the rg fallback uses `glob` instead
 
 ---@param opts search.zoekt.Opts
 ---@type snacks.picker.finder
@@ -339,7 +340,7 @@ function M.finder(opts, ctx)
     return grep(opts, ctx)
   end
   local pattern, args = Snacks.picker.util.parse(search)
-  local terms = table.concat(args, " ")
+  local terms = vim.trim(table.concat(args, " ") .. " " .. (opts.terms or ""))
   local max = opts.symbols and 500 or 20000
 
   ---@async
