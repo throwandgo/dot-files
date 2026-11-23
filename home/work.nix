@@ -1,7 +1,12 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 {
-  imports = [ ./base.nix ];
+  imports = [ ./base.nix ./zoekt.nix ];
+
+  programs.zoekt = {
+    enable = true;
+    repos = [ "${config.home.homeDirectory}/site" ];
+  };
 
   home.packages = with pkgs; [
     awscli2 # aws cli
