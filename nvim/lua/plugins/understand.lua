@@ -1,11 +1,10 @@
--- Code understanding: hierarchy keymaps, proto LSP (see lua/understand/ for the helpers).
+-- Code understanding: hierarchy keymaps (see lua/understand/ for the helpers).
 -- treesitter-context and aerial come from LazyVim extras imported in config/lazy.lua.
 return {
   {
     "neovim/nvim-lspconfig",
     opts = {
       servers = {
-        buf_ls = {},
         ["*"] = {
           -- stylua: ignore
           keys = {
