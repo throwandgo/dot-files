@@ -1,10 +1,14 @@
 -- PR lists from GitHub search: the review inbox (`<leader>gR`, every open PR waiting on you across
 -- repos) and your own open PRs (the homepage). A PR matching several queries keeps the first
--- query's label (direct asks beat team asks).
+-- query's label (direct asks beat team asks). Only PRs active in the last `M.DAYS` days count:
+-- anything quieter is parked, and skipping it keeps the lists short and the searches fast.
 local gh = require("review.gh")
 local util = require("review.util")
 
 local M = {}
+
+M.DAYS = 7
+M.WINDOW = ("active in last %dd"):format(M.DAYS)
 
 local OPEN = "is:pr is:open archived:false "
 local WAITING = OPEN .. "draft:false -author:@me "
@@ -129,11 +133,12 @@ end
 function M.search(queries, opts)
   opts = opts or {}
   local parts = {}
+  local since = " updated:>=" .. os.date("!%Y-%m-%d", os.time() - M.DAYS * 86400)
   for i, q in ipairs(queries) do
     local extra = (q.threads and THREADS or "") .. " " .. (opts.details and DETAILS or "")
     parts[#parts + 1] = ("q%d: search(query: %q, type: ISSUE, first: %d) { %s }"):format(
       i,
-      q.q,
+      q.q .. since,
       q.first or 100,
       FIELDS:format(extra)
     )
@@ -174,26 +179,18 @@ function M.mine(opts)
   return M.search({ M.mine_query }, opts)
 end
 
---- Homepage summary in one light request: the newest `n` direct asks and the size of each queue.
----@return { you: integer, team: integer, top: table[] }
-function M.summary(n)
-  local queries = vim.tbl_map(function(q)
-    return vim.tbl_extend("force", q, {
-      q = q.q .. " sort:updated-desc",
-      first = q.label == "you" and n or 0,
-    })
-  end, M.queries)
-  local items, counts = M.search(queries)
-  local you = vim.tbl_filter(function(i)
-    return i.label == "you"
-  end, items)
-  table.sort(you, function(a, b)
-    return a.updated > b.updated
-  end)
-  local r = { you = 0, team = 0, top = vim.list_slice(you, 1, n) }
+--- Queue sizes for the homepage, in one count-only request.
+---@return { mine: integer, you: integer, team: integer }
+function M.counts()
+  local queries = vim.list_extend({ M.mine_query }, M.queries)
+  queries = vim.tbl_map(function(q)
+    return vim.tbl_extend("force", q, { first = 0 })
+  end, queries)
+  local _, counts = M.search(queries)
+  local r = { mine = counts[1], you = 0, team = 0 }
   for i, q in ipairs(M.queries) do
     local k = q.label == "you" and "you" or "team"
-    r[k] = r[k] + counts[i]
+    r[k] = r[k] + counts[i + 1]
   end
   return r
 end
@@ -253,7 +250,7 @@ end
 --- Picker over PR items; <CR> opens the review cockpit, <c-o> the browser.
 function M.pick(title, items)
   Snacks.picker({
-    title = ("%s (%d)"):format(title, #items),
+    title = ("%s (%d, %s)"):format(title, #items, M.WINDOW),
     items = items,
     format = format,
     preview = "preview",

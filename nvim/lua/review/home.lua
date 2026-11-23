@@ -1,5 +1,6 @@
--- Homepage (snacks dashboard): your open PRs, PRs waiting on your review, and a plain agent session.
--- Rows draw from a disk cache so the page is instant; a background refresh repaints it when stale.
+-- Homepage (snacks dashboard): a roadrunner, then launchers for my PRs, PRs waiting on my review
+-- and a plain agent session. Queue sizes come from a disk cache so the page paints instantly; a
+-- count-only search refreshes them in the background.
 local inbox = require("review.inbox")
 local util = require("review.util")
 
@@ -7,10 +8,21 @@ local M = {}
 
 local CACHE = vim.fs.joinpath(vim.fn.stdpath("cache"), "review", "home.json")
 local STALE = 60 -- seconds
-local MAX_ROWS = { mine = 8, reviews = 5 }
-local WIDTH = 100
 
----@type { mine?: table[], mine_count?: integer, reviews?: { you: integer, team: integer, top: table[] }, at?: integer, error?: string }
+-- every line is the same width: snacks centers each header line on its own
+M.LOGO = [[
+                                     ___   ,/\/\/\                  
+                                _.-''   `-'      `\                 
+                             .-'               (@)  `--.___________ 
+          _____.......------'                      .--------------->
+   <<<=='______......____                      _.-'                 
+                         ``--..___      __..--'\\                   
+     -  --  ---  ----             ``//''        \\                  
+                                   //            \\                 
+                                __//              `\\__             
+                               '--'                 `--'            ]]
+
+---@type { counts?: { mine: integer, you: integer, team: integer }, at?: integer, error?: string }
 M.data = {}
 local loading = false
 
@@ -33,163 +45,51 @@ local function save()
   end
 end
 
-local function slim(item)
-  local keep = {}
-  for _, k in ipairs({ "label", "repo", "number", "title", "url", "author", "updated", "ci", "decision" }) do
-    keep[k] = item[k]
-  end
-  for _, k in ipairs({ "draft", "conflicts", "unresolved" }) do
-    keep[k] = item[k]
-  end
-  return keep
-end
-
---- Re-fetch both lists (in parallel) unless fresh or already loading; repaints when done.
+--- Re-count the queues unless fresh or already counting; repaints when done.
 function M.refresh(force)
   if loading or (not force and M.data.at and os.time() - M.data.at < STALE) then
     return
   end
   loading = true
-  local pending, err = 2, nil
-  local function done()
-    pending = pending - 1
-    if pending == 0 then
-      loading = false
-      M.data.at = os.time()
-      M.data.error = err
-      save()
-      Snacks.dashboard.update()
-    end
-  end
-  local function job(fn)
-    util.run(function()
-      local ok, e = pcall(fn)
-      if not ok then
-        err = tostring(e)
-      end
-      done()
-    end)
-  end
-  job(function()
-    local q = vim.tbl_extend("force", inbox.mine_query, { first = MAX_ROWS.mine })
-    local items, counts = inbox.search({ q })
-    M.data.mine, M.data.mine_count = vim.tbl_map(slim, items), counts[1]
-  end)
-  job(function()
-    local r = inbox.summary(MAX_ROWS.reviews)
-    r.top = vim.tbl_map(slim, r.top)
-    M.data.reviews = r
+  util.run(function()
+    local ok, res = pcall(inbox.counts)
+    loading = false
+    M.data.at = os.time()
+    M.data.counts = ok and res or M.data.counts
+    M.data.error = not ok and tostring(res) or nil
+    save()
+    Snacks.dashboard.update()
   end)
 end
 
-local function short_repo(item)
-  return item.repo:match("/(.+)$")
-end
-
-local function fit(s, n)
-  return vim.fn.strchars(s) > n and vim.fn.strcharpart(s, 0, n - 1) .. "…" or s
-end
-
-local function width_of(chunks)
-  local w = 0
-  for _, c in ipairs(chunks) do
-    w = w + vim.api.nvim_strwidth(c[1])
-  end
-  return w
-end
-
---- Column widths shared by a section's rows, so titles line up.
-local function columns(items, with_author)
-  local w = { repo = 0, status = 0, author = with_author and 0 or nil }
-  for _, item in ipairs(items) do
-    if with_author then
-      w.author = math.max(w.author, vim.api.nvim_strwidth(fit("@" .. item.author, 20)))
-    end
-    w.repo = math.max(w.repo, vim.api.nvim_strwidth(fit(short_repo(item), 16) .. " #" .. item.number))
-    w.status = math.max(w.status, width_of(inbox.status(item)))
-  end
-  return w
-end
-
---- One dashboard row: age, repo #n, status, title (trimmed so the row fits).
-local function row(item, w)
-  local status = inbox.status(item)
-  local repo = fit(short_repo(item), 16) .. " #" .. item.number
-  local head = {
-    { ("%-4s"):format(inbox.ago(item.updated)), "Comment" },
-    { repo .. (" "):rep(w.repo - vim.api.nvim_strwidth(repo) + 1), "Comment" },
-  }
-  vim.list_extend(head, status)
-  head[#head + 1] = { (" "):rep(w.status - width_of(status) + 2) }
-  if w.author then
-    local who = fit("@" .. item.author, 20)
-    head[#head + 1] = { who .. (" "):rep(w.author - vim.api.nvim_strwidth(who) + 2), "Special" }
-  end
-  local room = WIDTH - 8 - width_of(head)
-  head[#head + 1] = { fit(item.title, math.max(room, 10)) }
-  return {
-    desc = head,
-    autokey = true,
-    action = function()
-      require("review").start(item.url)
-    end,
-  }
-end
-
-local function note(text, hl)
-  return { desc = { { text, hl or "Comment" } } }
-end
-
-local function status_note(rows)
-  if #rows > 0 then
-    return rows
-  end
+--- "6 open  (active in last 7d)" style detail after a launcher's name.
+local function detail(text)
+  local c = M.data.counts
   if M.data.error then
-    return { note(M.data.error, "DiagnosticError") }
+    return { "  " .. M.data.error:gsub("\n.*", ""), "DiagnosticError" }
   end
-  return { note(loading and "loading…" or "nothing here") }
+  return { "  " .. (c and text(c) or loading and "counting…" or "") .. "  (" .. inbox.WINDOW .. ")", "Comment" }
 end
 
---- Dashboard section: your open PRs, most recently updated first.
-function M.mine()
+--- Dashboard section: the PR launchers and the agent.
+function M.launchers()
   M.refresh()
-  local shown = vim.list_slice(M.data.mine or {}, 1, MAX_ROWS.mine)
-  local w, rows = columns(shown), {}
-  for _, item in ipairs(shown) do
-    rows[#rows + 1] = row(item, w)
-  end
-  local n = M.data.mine_count or #(M.data.mine or {})
-  return {
-    title = "My PRs" .. (n > MAX_ROWS.mine and (" · %d open"):format(n) or ""),
-    icon = " ",
-    key = "p",
-    action = inbox.open_mine,
-    padding = 1,
-    indent = 2,
-    status_note(rows),
-  }
-end
-
---- Dashboard section: PRs waiting on your review (direct asks listed; the team queue counted).
-function M.reviews()
-  local r = M.data.reviews
-  local shown = r and r.top or {}
-  local w, rows = columns(shown, true), {}
-  for _, item in ipairs(shown) do
-    rows[#rows + 1] = row(item, w)
-  end
-  local title = "Reviews waiting"
-  if r then
-    title = ("%s · %d for you · %d more for LNE"):format(title, r.you, r.team)
+  local function item(icon, key, name, action, info)
+    local desc = { { name, "SnacksDashboardDesc" } }
+    if info then
+      desc[#desc + 1] = detail(info)
+    end
+    return { icon = icon, key = key, desc = desc, action = action }
   end
   return {
-    title = title,
-    icon = " ",
-    key = "r",
-    action = inbox.open,
     padding = 1,
-    indent = 2,
-    status_note(rows),
+    item(" ", "p", "My PRs", inbox.open_mine, function(c)
+      return ("%d open"):format(c.mine)
+    end),
+    item(" ", "r", "Reviews waiting", inbox.open, function(c)
+      return ("%d for you · %d more for LNE"):format(c.you, c.team)
+    end),
+    item(" ", "a", "Agent session (copilot)", M.agent),
   }
 end
 
@@ -219,7 +119,5 @@ end
 function M.agent()
   require("sidekick.cli").show({ name = "copilot", focus = true })
 end
-
-M.WIDTH = WIDTH
 
 return M
