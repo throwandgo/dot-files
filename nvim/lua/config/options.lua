@@ -1,36 +1,14 @@
--- Options are automatically loaded before lazy.nvim startup
--- Default options that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/options.lua
--- Add any additional options here
+-- Only deviations from LazyVim's options:
+-- https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/options.lua
 
--- Disable all animations in Vim.
 vim.g.snacks_animate = false
 
--- Disable showing AI-powered suggestions in the cmp menu.
---
--- The main frustration is that the AI-powered suggestions come back async, and they can end up
--- taking the place of better suggestions from LSP and other sources in the menu. So, instead of
--- showing them in the menu, we instead show them in the virtual text.
-vim.g.ai_cmp = false
-
--- Use snacks.picker instead of fzf-lua (LazyVim falls back to fzf-lua for configs created before
--- v8). fzf-lua's live grep pipes every rg match through a separate nvim process to add icons
--- and reformat paths, roughly doubling the time to show results on broad queries in a large
--- repo; snacks streams rg output in-process and only renders the visible rows.
+-- This config predates LazyVim v8, which would otherwise keep fzf-lua and neo-tree. snacks streams
+-- rg/zoekt results in-process (fzf-lua pipes every match through a second nvim) and its explorer
+-- is the same picker, so neither needs another plugin.
 vim.g.lazyvim_picker = "snacks"
+vim.g.lazyvim_explorer = "snacks"
 
--- Disable the use of the LSP root for finding files (and other such things).
---
--- I never want the concept of the project root to be the LSP root, which is usually a subdirectory
--- of a project.
-vim.g.root_lsp_ignore = {
-  "buf_ls",
-  "eslint",
-  "jedi_language_server",
-  "metals",
-  "pyright",
-  "ruff",
-  "rust_analyzer",
-  "solargraph",
-  "tailwindcss",
-  "ts_ls",
-}
+-- The root (for <leader>ff, <leader>e, ...) is the git root, never an LSP root: Metals and jdtls
+-- roots are build subdirectories of the monorepo.
+vim.g.root_spec = { { ".git", "lua" }, "cwd" }
