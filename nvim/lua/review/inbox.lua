@@ -1,7 +1,8 @@
 -- PR lists from GitHub search: the review inbox (`<leader>gR`, every open PR waiting on you across
 -- repos) and your own open PRs (the homepage). A PR matching several queries keeps the first
 -- query's label (direct asks beat team asks). Only PRs active in the last `M.DAYS` days count:
--- anything quieter is parked, and skipping it keeps the lists short and the searches fast.
+-- anything quieter is parked, and skipping it keeps the lists short and the searches fast. A review
+-- ask is done once anyone on LNE has approved, so those drop out (search can't filter on that).
 local gh = require("review.gh")
 local util = require("review.util")
 
@@ -10,6 +11,7 @@ local M = {}
 M.DAYS = 7
 M.WINDOW = ("active in last %dd"):format(M.DAYS)
 
+local TEAM = { org = "metropolis-io", slug = "metropolis-lne" }
 local OPEN = "is:pr is:open archived:false "
 local WAITING = OPEN .. "draft:false -author:@me "
 
@@ -19,17 +21,29 @@ local WAITING = OPEN .. "draft:false -author:@me "
 ---@field q string full GitHub search query
 ---@field threads? boolean also count unresolved review threads (heavy: keep to short lists)
 ---@field first? integer rows to fetch (default 100; 0 = count only)
+---@field skip_team_approved? boolean drop PRs whose latest review from a TEAM member approves
 
 ---@type review.inbox.Query[]
 M.queries = {
-  { label = "you", hl = "DiagnosticWarn", q = WAITING .. "repo:metropolis-io/web user-review-requested:@me" },
-  { label = "you", hl = "DiagnosticWarn", q = WAITING .. "repo:metropolis-io/site user-review-requested:@me" },
+  {
+    label = "you",
+    hl = "DiagnosticWarn",
+    q = WAITING .. "repo:metropolis-io/web user-review-requested:@me",
+    skip_team_approved = true,
+  },
+  {
+    label = "you",
+    hl = "DiagnosticWarn",
+    q = WAITING .. "repo:metropolis-io/site user-review-requested:@me",
+    skip_team_approved = true,
+  },
   -- the team stays requested after round robin picks someone, so this is LNE's whole queue
   {
     label = "LNE",
     hl = "DiagnosticInfo",
     q = WAITING
-      .. "repo:metropolis-io/site team-review-requested:metropolis-io/metropolis-lne -user-review-requested:@me",
+      .. ("repo:metropolis-io/site team-review-requested:%s/%s -user-review-requested:@me"):format(TEAM.org, TEAM.slug),
+    skip_team_approved = true,
   },
 }
 
@@ -52,6 +66,7 @@ local FIELDS = [[
   }
 ]]
 local THREADS = "reviewThreads(first: 100) { nodes { isResolved } }"
+local APPROVALS = "latestOpinionatedReviews(first: 30) { nodes { state author { login } } }"
 local DETAILS = "body reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } } } }"
 
 local CI = {
@@ -128,22 +143,47 @@ end
 
 --- Items for `queries` in one request, deduped in query order, plus each query's total match count.
 ---@param queries review.inbox.Query[]
----@param opts? { details?: boolean } details: body and other reviewers (for the picker preview)
+---@param opts? { details?: boolean, count?: boolean } details: body and other reviewers (for the
+--- picker preview); count: fetch only what filtering needs and return no items
 ---@return table[] items, integer[] counts
 function M.search(queries, opts)
   opts = opts or {}
   local parts = {}
   local since = " updated:>=" .. os.date("!%Y-%m-%d", os.time() - M.DAYS * 86400)
+  local team = ""
   for i, q in ipairs(queries) do
-    local extra = (q.threads and THREADS or "") .. " " .. (opts.details and DETAILS or "")
+    if q.skip_team_approved then
+      team = ('team: organization(login: "%s") { team(slug: "%s") { members(first: 100) { nodes { login } } } }'):format(
+        TEAM.org,
+        TEAM.slug
+      )
+    end
+    local extra = table.concat({
+      q.threads and THREADS or "",
+      q.skip_team_approved and APPROVALS or "",
+      opts.details and DETAILS or "",
+    }, " ")
     parts[#parts + 1] = ("q%d: search(query: %q, type: ISSUE, first: %d) { %s }"):format(
       i,
       q.q .. since,
       q.first or 100,
-      FIELDS:format(extra)
+      opts.count and ("issueCount nodes { ... on PullRequest { url %s } }"):format(extra) or FIELDS:format(extra)
     )
   end
-  local data = gh.graphql("query {\n  viewer { login }\n" .. table.concat(parts, "\n") .. "\n}", vim.empty_dict())
+  local query = ("query {\n  viewer { login }\n%s\n%s\n}"):format(team, table.concat(parts, "\n"))
+  local data = gh.graphql(query, vim.empty_dict())
+  local members = {}
+  for _, m in ipairs(data.team and data.team.team and data.team.team.members.nodes or {}) do
+    members[m.login] = true
+  end
+  local function team_approved(pr)
+    for _, r in ipairs(pr.latestOpinionatedReviews and pr.latestOpinionatedReviews.nodes or {}) do
+      if r.state == "APPROVED" and r.author and members[r.author.login] then
+        return true
+      end
+    end
+    return false
+  end
   local seen, items, counts = {}, {}, {}
   for i, q in ipairs(queries) do
     local res = data["q" .. i]
@@ -152,7 +192,9 @@ function M.search(queries, opts)
       util.notify(("%s: showing %d of %d PRs"):format(q.q, #res.nodes, res.issueCount), vim.log.levels.WARN)
     end
     for _, pr in ipairs(res.nodes) do
-      if pr.url and not seen[pr.url] then
+      if q.skip_team_approved and team_approved(pr) then
+        counts[i] = counts[i] - 1
+      elseif not opts.count and pr.url and not seen[pr.url] then
         seen[pr.url] = true
         items[#items + 1] = to_item(pr, q, data.viewer.login)
       end
@@ -179,14 +221,15 @@ function M.mine(opts)
   return M.search({ M.mine_query }, opts)
 end
 
---- Queue sizes for the homepage, in one count-only request.
+--- Queue sizes for the homepage, in one request. Review queues need their rows to drop the ones
+--- LNE already approved; the rest are count-only.
 ---@return { mine: integer, you: integer, team: integer }
 function M.counts()
   local queries = vim.list_extend({ M.mine_query }, M.queries)
   queries = vim.tbl_map(function(q)
-    return vim.tbl_extend("force", q, { first = 0 })
+    return vim.tbl_extend("force", q, { first = q.skip_team_approved and 100 or 0 })
   end, queries)
-  local _, counts = M.search(queries)
+  local _, counts = M.search(queries, { count = true })
   local r = { mine = counts[1], you = 0, team = 0 }
   for i, q in ipairs(M.queries) do
     local k = q.label == "you" and "you" or "team"
