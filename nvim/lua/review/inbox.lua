@@ -1,36 +1,54 @@
--- `<leader>gR` inbox: every open PR waiting on you, across repos, in one picker. Each query is a
--- GitHub search; a PR matching several keeps the first query's label (direct asks beat team asks).
+-- PR lists from GitHub search: the review inbox (`<leader>gR`, every open PR waiting on you across
+-- repos) and your own open PRs (the homepage). A PR matching several queries keeps the first
+-- query's label (direct asks beat team asks).
 local gh = require("review.gh")
 local util = require("review.util")
 
 local M = {}
 
-local BASE = "is:pr is:open draft:false -author:@me archived:false "
+local OPEN = "is:pr is:open archived:false "
+local WAITING = OPEN .. "draft:false -author:@me "
 
----@type { label: string, hl: string, q: string }[]
+---@class review.inbox.Query
+---@field label string
+---@field hl? string
+---@field q string full GitHub search query
+---@field threads? boolean also count unresolved review threads (heavy: keep to short lists)
+---@field first? integer rows to fetch (default 100; 0 = count only)
+
+---@type review.inbox.Query[]
 M.queries = {
-  { label = "you", hl = "DiagnosticWarn", q = "repo:metropolis-io/web user-review-requested:@me" },
-  { label = "you", hl = "DiagnosticWarn", q = "repo:metropolis-io/site user-review-requested:@me" },
+  { label = "you", hl = "DiagnosticWarn", q = WAITING .. "repo:metropolis-io/web user-review-requested:@me" },
+  { label = "you", hl = "DiagnosticWarn", q = WAITING .. "repo:metropolis-io/site user-review-requested:@me" },
   -- the team stays requested after round robin picks someone, so this is LNE's whole queue
   {
     label = "LNE",
     hl = "DiagnosticInfo",
-    q = "repo:metropolis-io/site team-review-requested:metropolis-io/metropolis-lne",
+    q = WAITING
+      .. "repo:metropolis-io/site team-review-requested:metropolis-io/metropolis-lne -user-review-requested:@me",
   },
 }
 
+---@type review.inbox.Query
+M.mine_query =
+  { label = "mine", q = OPEN .. "author:@me org:metropolis-io sort:updated-desc", threads = true, first = 30 }
+
+-- GitHub search costs ~3s per 100 rows whatever the fields, so lists that only need a few rows
+-- (the homepage) ask for few, and the picker-only fields (body, other reviewers) are optional.
 local FIELDS = [[
   issueCount
   nodes {
     ... on PullRequest {
-      number title url body updatedAt reviewDecision
+      number title url updatedAt reviewDecision isDraft mergeable
       author { login }
       repository { nameWithOwner }
-      reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } } } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      %s
     }
   }
 ]]
+local THREADS = "reviewThreads(first: 100) { nodes { isResolved } }"
+local DETAILS = "body reviewRequests(first: 10) { nodes { requestedReviewer { ... on User { login } } } }"
 
 local CI = {
   SUCCESS = { "✓", "DiagnosticOk" },
@@ -43,9 +61,11 @@ local CI = {
 local DECISION = {
   APPROVED = { "approved", "DiagnosticOk" },
   CHANGES_REQUESTED = { "changes requested", "DiagnosticError" },
+  REVIEW_REQUIRED = { "awaiting review", "Comment" },
 }
 
-local function ago(iso)
+--- "5m", "3h", "2d" since an ISO-8601 UTC timestamp.
+function M.ago(iso)
   local y, mo, d, h, mi, s = iso:match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
   local utc_offset = os.time() - os.time(os.date("!*t") --[[@as osdate]])
   local t = os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s }) + utc_offset
@@ -58,68 +78,87 @@ local function ago(iso)
   return "now"
 end
 
---- Open PRs matching `M.queries`, deduped, direct asks first, then most recently updated.
-function M.fetch()
+local function to_item(pr, q, me)
+  local others = {}
+  for _, r in ipairs(pr.reviewRequests and pr.reviewRequests.nodes or {}) do
+    local login = r.requestedReviewer and r.requestedReviewer.login
+    if login and login ~= me then
+      others[#others + 1] = "@" .. login
+    end
+  end
+  local unresolved = #vim.tbl_filter(function(t)
+    return not t.isResolved
+  end, pr.reviewThreads and pr.reviewThreads.nodes or {})
+  local c = pr.commits.nodes[1]
+  local author = pr.author and pr.author.login or "ghost"
+  return {
+    label = q.label,
+    label_hl = q.hl,
+    repo = pr.repository.nameWithOwner,
+    number = pr.number,
+    title = pr.title,
+    url = pr.url,
+    author = author,
+    updated = pr.updatedAt,
+    ci = c and c.commit.statusCheckRollup and c.commit.statusCheckRollup.state,
+    decision = pr.reviewDecision,
+    draft = pr.isDraft,
+    conflicts = pr.mergeable == "CONFLICTING",
+    unresolved = unresolved,
+    others = others,
+    text = ("%s #%d %s %s %s"):format(pr.repository.nameWithOwner, pr.number, pr.title, author, q.label),
+    preview = {
+      ft = "markdown",
+      text = ("# %s\n\n%s #%d by @%s · updated %s ago%s\n\n%s"):format(
+        pr.title,
+        pr.repository.nameWithOwner,
+        pr.number,
+        author,
+        M.ago(pr.updatedAt),
+        #others > 0 and ("\nAlso requested: " .. table.concat(others, ", ")) or "",
+        (pr.body or ""):gsub("\r", "")
+      ),
+    },
+  }
+end
+
+--- Items for `queries` in one request, deduped in query order, plus each query's total match count.
+---@param queries review.inbox.Query[]
+---@param opts? { details?: boolean } details: body and other reviewers (for the picker preview)
+---@return table[] items, integer[] counts
+function M.search(queries, opts)
+  opts = opts or {}
   local parts = {}
-  for i, q in ipairs(M.queries) do
-    parts[#parts + 1] = ("q%d: search(query: %q, type: ISSUE, first: 100) { %s }"):format(i, BASE .. q.q, FIELDS)
+  for i, q in ipairs(queries) do
+    local extra = (q.threads and THREADS or "") .. " " .. (opts.details and DETAILS or "")
+    parts[#parts + 1] = ("q%d: search(query: %q, type: ISSUE, first: %d) { %s }"):format(
+      i,
+      q.q,
+      q.first or 100,
+      FIELDS:format(extra)
+    )
   end
   local data = gh.graphql("query {\n  viewer { login }\n" .. table.concat(parts, "\n") .. "\n}", vim.empty_dict())
-  local me = data.viewer.login
-  local seen, items = {}, {}
-  for i, q in ipairs(M.queries) do
+  local seen, items, counts = {}, {}, {}
+  for i, q in ipairs(queries) do
     local res = data["q" .. i]
-    if res.issueCount > #res.nodes then
+    counts[i] = res.issueCount
+    if not q.first and res.issueCount > #res.nodes then
       util.notify(("%s: showing %d of %d PRs"):format(q.q, #res.nodes, res.issueCount), vim.log.levels.WARN)
     end
     for _, pr in ipairs(res.nodes) do
       if pr.url and not seen[pr.url] then
         seen[pr.url] = true
-        local others = {}
-        for _, r in ipairs(pr.reviewRequests and pr.reviewRequests.nodes or {}) do
-          local login = r.requestedReviewer and r.requestedReviewer.login
-          if login and login ~= me then
-            others[#others + 1] = "@" .. login
-          end
-        end
-        local c = pr.commits.nodes[1]
-        local ci = c and c.commit.statusCheckRollup and c.commit.statusCheckRollup.state
-        items[#items + 1] = {
-          rank = i,
-          label = q.label,
-          label_hl = q.hl,
-          repo = pr.repository.nameWithOwner,
-          number = pr.number,
-          title = pr.title,
-          url = pr.url,
-          author = pr.author and pr.author.login or "ghost",
-          updated = pr.updatedAt,
-          ci = ci,
-          decision = pr.reviewDecision,
-          others = others,
-          text = ("%s #%d %s %s %s"):format(
-            pr.repository.nameWithOwner,
-            pr.number,
-            pr.title,
-            pr.author and pr.author.login or "",
-            q.label
-          ),
-          preview = {
-            ft = "markdown",
-            text = ("# %s\n\n%s #%d by @%s · updated %s ago%s\n\n%s"):format(
-              pr.title,
-              pr.repository.nameWithOwner,
-              pr.number,
-              pr.author and pr.author.login or "ghost",
-              ago(pr.updatedAt),
-              #others > 0 and ("\nAlso requested: " .. table.concat(others, ", ")) or "",
-              (pr.body or ""):gsub("\r", "")
-            ),
-          },
-        }
+        items[#items + 1] = to_item(pr, q, data.viewer.login)
       end
     end
   end
+  return items, counts
+end
+
+--- PRs waiting on you: direct asks first, then most recently updated.
+function M.fetch()
+  local items = M.search(M.queries, { details = true })
   table.sort(items, function(a, b)
     if (a.label == "you") ~= (b.label == "you") then
       return a.label == "you"
@@ -129,51 +168,123 @@ function M.fetch()
   return items
 end
 
-local function format(item)
-  local ci = CI[item.ci or ""] or { " ", nil }
-  local dec = DECISION[item.decision or ""]
-  local ret = {
-    { ("%-4s"):format(item.label), item.label_hl },
-    { ("%-5s"):format(item.repo:match("/(.+)$")), "Comment" },
-    { ("#%-6d"):format(item.number), "SnacksPickerIdx" },
-    { ci[1] .. " ", ci[2] },
-    { item.title },
-    { "  @" .. item.author, "Comment" },
-    { " · " .. ago(item.updated), "Comment" },
-  }
-  if dec then
-    ret[#ret + 1] = { " · " .. dec[1], dec[2] }
+--- Your open PRs, most recently updated first.
+---@param opts? { details?: boolean }
+function M.mine(opts)
+  return M.search({ M.mine_query }, opts)
+end
+
+--- Homepage summary in one light request: the newest `n` direct asks and the size of each queue.
+---@return { you: integer, team: integer, top: table[] }
+function M.summary(n)
+  local queries = vim.tbl_map(function(q)
+    return vim.tbl_extend("force", q, {
+      q = q.q .. " sort:updated-desc",
+      first = q.label == "you" and n or 0,
+    })
+  end, M.queries)
+  local items, counts = M.search(queries)
+  local you = vim.tbl_filter(function(i)
+    return i.label == "you"
+  end, items)
+  table.sort(you, function(a, b)
+    return a.updated > b.updated
+  end)
+  local r = { you = 0, team = 0, top = vim.list_slice(you, 1, n) }
+  for i, q in ipairs(M.queries) do
+    local k = q.label == "you" and "you" or "team"
+    r[k] = r[k] + counts[i]
   end
-  if item.label ~= "you" and #item.others > 0 then
-    ret[#ret + 1] = { " → " .. table.concat(item.others, " "), "DiagnosticHint" }
+  return r
+end
+
+--- CI, review state, unresolved threads and conflicts as highlighted chunks.
+---@return {[1]:string, [2]:string?}[]
+function M.status(item)
+  local ci = CI[item.ci or ""] or { " ", nil }
+  local ret = { { ci[1] .. " ", ci[2] } }
+  if item.draft then
+    ret[#ret + 1] = { "draft", "Comment" }
+  elseif DECISION[item.decision or ""] then
+    ret[#ret + 1] = DECISION[item.decision]
+  end
+  if item.unresolved and item.unresolved > 0 then
+    ret[#ret + 1] = { " ✎" .. item.unresolved, "DiagnosticInfo" }
+  end
+  if item.conflicts then
+    ret[#ret + 1] = { " conflicts", "DiagnosticError" }
   end
   return ret
+end
+
+local function format(item)
+  local mine = item.label == "mine"
+  local ret = {}
+  if not mine then
+    ret[#ret + 1] = { ("%-4s"):format(item.label), item.label_hl }
+  end
+  vim.list_extend(ret, {
+    { ("%-5s"):format(item.repo:match("/(.+)$")), "Comment" },
+    { ("#%-6d"):format(item.number), "SnacksPickerIdx" },
+  })
+  local status = M.status(item)
+  if mine then
+    vim.list_extend(ret, status)
+    ret[#ret + 1] = { "  " }
+  else
+    ret[#ret + 1] = status[1]
+  end
+  ret[#ret + 1] = { item.title }
+  if not mine then
+    ret[#ret + 1] = { "  @" .. item.author, "Comment" }
+  end
+  ret[#ret + 1] = { " · " .. M.ago(item.updated), "Comment" }
+  if not mine then
+    for i = 2, #status do
+      ret[#ret + 1] = { " ·" .. (status[i][1]:sub(1, 1) == " " and "" or " ") .. status[i][1], status[i][2] }
+    end
+    if item.label ~= "you" and #item.others > 0 then
+      ret[#ret + 1] = { " → " .. table.concat(item.others, " "), "DiagnosticHint" }
+    end
+  end
+  return ret
+end
+
+--- Picker over PR items; <CR> opens the review cockpit, <c-o> the browser.
+function M.pick(title, items)
+  Snacks.picker({
+    title = ("%s (%d)"):format(title, #items),
+    items = items,
+    format = format,
+    preview = "preview",
+    sort = { fields = { "score:desc", "idx" } },
+    matcher = { sort_empty = false },
+    confirm = function(picker, item)
+      picker:close()
+      if item then
+        require("review").start(item.url)
+      end
+    end,
+    actions = {
+      browse = function(_, item)
+        vim.ui.open(item.url)
+      end,
+    },
+    win = { input = { keys = { ["<c-o>"] = { "browse", mode = { "n", "i" }, desc = "Open in browser" } } } },
+  })
 end
 
 function M.open()
   util.run(function()
     util.notify("Loading PRs waiting on you…")
-    local items = M.fetch()
-    Snacks.picker({
-      title = ("  PRs waiting on you (%d)"):format(#items),
-      items = items,
-      format = format,
-      preview = "preview",
-      sort = { fields = { "score:desc", "idx" } },
-      matcher = { sort_empty = false },
-      confirm = function(picker, item)
-        picker:close()
-        if item then
-          require("review").start(item.url)
-        end
-      end,
-      actions = {
-        browse = function(_, item)
-          vim.ui.open(item.url)
-        end,
-      },
-      win = { input = { keys = { ["<c-o>"] = { "browse", mode = { "n", "i" }, desc = "Open in browser" } } } },
-    })
+    M.pick("  PRs waiting on you", M.fetch())
+  end)
+end
+
+function M.open_mine()
+  util.run(function()
+    util.notify("Loading your PRs…")
+    M.pick("  My PRs", M.mine({ details = true }))
   end)
 end
 
