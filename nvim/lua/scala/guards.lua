@@ -55,7 +55,8 @@ end
 ---@class scala.Import
 ---@field failed boolean last import failed
 ---@field imported boolean last import succeeded
----@field skipped boolean Metals' latest start skipped importing because the last one failed
+---@field skipped string? status of the last import, when Metals' latest start skipped importing
+---   because the build files are unchanged (Installed, Failed, Started = interrupted, ...)
 ---@field cause string? first error of the failed import
 ---@field server string? build server Metals last connected to
 
@@ -66,16 +67,16 @@ function M.last_import(root)
   if not lines then
     return nil
   end
-  local st = { failed = false, imported = false, skipped = false }
+  local st = { failed = false, imported = false }
   for _, raw in ipairs(lines) do
     local line = raw:gsub("\27%[[%d;]*m", "")
     st.server = line:match("Connected to Build server: (.+)$") or st.server
     if line:match("running '.*bloopInstall") or line:match("running '.*gradle") then
-      st.failed, st.imported, st.skipped, st.cause = false, false, false, nil
+      st.failed, st.imported, st.skipped, st.cause = false, false, nil, nil
     elseif line:match("INFO  Started: Metals") then
-      st.skipped = false
-    elseif line:match("skipping build import with status 'Failed'") then
-      st.skipped = true
+      st.skipped = nil
+    elseif line:match("skipping build import with status '%a+'") then
+      st.skipped = line:match("skipping build import with status '(%a+)'")
     elseif not st.cause and (line:match("ERROR .-:%d+: error: ") or line:match("%[error%] %(")) then
       st.cause = line:match("ERROR (.-:%d+: error: .*)$") or line:match("%[error%] (.*)$")
     elseif line:match("ERROR sbt command failed") or line:match("ERROR .*[Ii]mport.* failed") then
@@ -102,7 +103,7 @@ function M.import_advice(st, root)
   elseif st.cause then
     table.insert(advice, "A task run during import failed; often local DB/Flyway: make -C metropolis/infrastructure up")
   end
-  table.insert(advice, ":MetalsImportBuild once fixed (Metals won't retry a failed build until its files change)")
+  table.insert(advice, "nvim retries the import once per session; :MetalsImportBuild retries now")
   return advice
 end
 
@@ -170,8 +171,12 @@ function M.patch_metals(metals_config)
   metals_config.handlers = metals_config.handlers or {}
   local show_request = metals_config.handlers["window/showMessageRequest"]
   metals_config.handlers["window/showMessageRequest"] = function(err, params, ctx, ...)
-    -- "Import project failed, no functionality will work... Switch build server" hides the cause in the log.
-    if params and (params.message or ""):find("Import project failed", 1, true) then
+    local answer = params and require("scala.autobuild").answer(params)
+    if answer then
+      return answer
+    end
+    -- "Import project (partially) failed... Switch build server" hides the cause in the log.
+    if params and (params.message or ""):find("^Import project.- failed") then
       local client = vim.lsp.get_client_by_id(ctx.client_id)
       report_failed_import(client and client.root_dir, "Build import failed")
     end
@@ -260,24 +265,6 @@ local function check_attach(client, buf)
   end
 end
 
-local import_checked = {}
-
--- Metals silently skips importing a build whose last import failed, so fixing the cause outside
--- the build files (sbt plugins, infra) leaves every file with no build target.
-local function check_skipped_import(client)
-  local root = client.root_dir
-  if not root or import_checked[root] then
-    return
-  end
-  import_checked[root] = true
-  vim.defer_fn(function()
-    local st = M.last_import(root)
-    if st and st.skipped then
-      report_failed_import(root, "Metals skipped importing the build because its last import failed")
-    end
-  end, 3000)
-end
-
 function M.setup()
   vim.api.nvim_create_autocmd("LspAttach", {
     group = vim.api.nvim_create_augroup("scala_guards", { clear = true }),
@@ -287,7 +274,7 @@ function M.setup()
         check_attach(client, ev.buf)
       end
       if client and client.name == "metals" then
-        check_skipped_import(client)
+        require("scala.autobuild").on_attach(client)
       end
     end,
   })

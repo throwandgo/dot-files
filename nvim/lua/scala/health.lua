@@ -16,17 +16,21 @@ local function metals_log_status(root)
       ("%s: last build import failed%s%s"):format(
         name,
         st.cause and (": " .. st.cause) or "",
-        st.skipped and " (Metals is skipping re-import)" or ""
+        st.skipped == "Failed" and " (Metals is skipping re-import)" or ""
       ),
       guards.import_advice(st, root)
     )
+  elseif st.skipped == "Started" then
+    h.warn(("%s: the last build import was interrupted; Metals skips it until it's re-run"):format(name), {
+      "nvim re-runs it on the next Metals start (or now: :MetalsImportBuild)",
+    })
   elseif st.imported then
     h.ok(("%s: build imported"):format(name))
   end
   local server = st.server
   if server and server:match("^sbt") then
     h.warn(("%s: build server is %s (slower and heavier than Bloop)"):format(name, server), {
-      ":MetalsSwitchBsp and pick Bloop",
+      "nvim switches it to Bloop on the next Metals start",
     })
   elseif server then
     h.ok(("%s: build server %s"):format(name, server))
