@@ -12,3 +12,7 @@ vim.g.lazyvim_explorer = "snacks"
 -- The root (for <leader>ff, <leader>e, ...) is the git root, never an LSP root: Metals and jdtls
 -- roots are build subdirectories of the monorepo.
 vim.g.root_spec = { { ".git", "lua" }, "cwd" }
+
+-- Highlight whole changed words inside a changed line (3.23.0 -> 3.29.0 marks 23/29, not one digit).
+vim.opt.diffopt:remove("inline:char")
+vim.opt.diffopt:append("inline:word")
