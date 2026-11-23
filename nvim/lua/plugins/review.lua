@@ -1,4 +1,4 @@
--- PR review (lua/review/): worktree + tab per PR with a cockpit panel (files with GitHub's Viewed
+-- PR review (lua/review/): worktree + diffview tab per PR with a cockpit panel (files with GitHub's Viewed
 -- state, agent findings, threads, next step), impact map, threads as diagnostics, pending comments.
 -- The interactive agent is sidekick + copilot CLI.
 return {
@@ -38,6 +38,17 @@ return {
         desc = "Impact of Change (callers)",
       },
     },
+    opts = {
+      indent = {
+        -- guides on only one side of a diff break the symmetry and draw over the fold rules
+        filter = function(buf, win)
+          return vim.g.snacks_indent ~= false
+            and vim.b[buf].snacks_indent ~= false
+            and vim.bo[buf].buftype == ""
+            and not vim.wo[win].diff
+        end,
+      },
+    },
     init = function()
       vim.api.nvim_create_autocmd("User", {
         pattern = "VeryLazy",
@@ -49,29 +60,34 @@ return {
     end,
   },
   {
-    -- Review tab `d`: side-by-side PR diff. The worktree is at the PR head, so the right side is the
-    -- real file (LSP, gd, gitsigns work inside the diff).
+    -- The review tab is a diffview of the PR (merge-base -> worktree at the PR head, so the right
+    -- side is the real file: LSP, gd, gitsigns work inside the diff).
     "sindrets/diffview.nvim",
     cmd = { "DiffviewOpen", "DiffviewFileHistory" },
     opts = {
       enhanced_diff_hl = true,
+      hooks = {
+        view_post_layout = function(view)
+          require("review.diff_hl").apply(view)
+        end,
+      },
       keymaps = {
-        view = { { "n", "q", "<cmd>DiffviewClose<cr>", { desc = "Close diffview" } } },
-        file_panel = {
-          { "n", "q", "<cmd>DiffviewClose<cr>", { desc = "Close diffview" } },
+        view = {
           {
             "n",
-            "v",
+            "q",
             function()
-              local view = require("diffview.lib").get_current_view()
-              local item = view and view.panel:get_item_at_cursor()
-              if item and item.path then
-                require("review.panel").toggle_viewed(item.path)
+              local st = require("review").active()
+              if st and st.tab == vim.api.nvim_get_current_tabpage() then
+                require("review.panel").confirm_close()
+              else
+                vim.cmd.DiffviewClose()
               end
             end,
-            { desc = "Toggle viewed (PR review)" },
+            { desc = "Close diffview / end review" },
           },
         },
+        file_panel = { { "n", "q", "<cmd>DiffviewClose<cr>", { desc = "Close diffview" } } },
       },
     },
   },

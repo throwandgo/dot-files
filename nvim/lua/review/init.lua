@@ -20,14 +20,13 @@ local M = {}
 ---@field head string
 ---@field merge_base string
 ---@field root string worktree
----@field tab integer
+---@field tab integer the PR's diffview tab
 ---@field files string[] changed paths (repo-relative)
 ---@field stats table<string, {status: string, add?: string, del?: string}>
 ---@field hunks table<string, integer[]> first new-side line of each hunk
 ---@field viewed table<string, boolean> GitHub's per-file "Viewed" state
 ---@field ci? string status check rollup of the head commit
 ---@field decision? string
----@field main_win? integer window the panel opens files in
 ---@field threads table[]
 ---@field pending_review? string
 ---@field findings? review.Finding[]
@@ -38,6 +37,10 @@ M.ns = {
   threads = vim.api.nvim_create_namespace("review.threads"),
   agent = vim.api.nvim_create_namespace("review.agent"),
 }
+-- their text is drawn as wrapped blocks under the line by review.notes
+for _, ns in pairs(M.ns) do
+  vim.diagnostic.config({ virtual_text = false, virtual_lines = false }, ns)
+end
 
 local group = vim.api.nvim_create_augroup("review", { clear = true })
 
@@ -112,14 +115,15 @@ local function thread_diagnostics(st, rel)
   for _, t in ipairs(st.threads or {}) do
     local l1, l2 = M.thread_lines(t)
     if t.path == rel and l1 and not t.isResolved then
-      local msgs = {}
+      local msgs, parts = {}, {}
       for i, c in ipairs(t.comments and t.comments.nodes or {}) do
-        msgs[#msgs + 1] = ("%s@%s%s: %s"):format(
-          i > 1 and "  ↳ " or "",
+        local who = ("@%s%s"):format(
           c.author and c.author.login or "ghost",
-          c.state == "PENDING" and " (pending)" or "",
-          vim.trim(c.body)
+          c.state == "PENDING" and " (pending)" or ""
         )
+        local body = vim.trim((c.body:gsub("^`L%d+%-?L?%d*`:%s*", "")))
+        msgs[#msgs + 1] = ("%s%s: %s"):format(i > 1 and "  ↳ " or "", who, body)
+        parts[#parts + 1] = { head = (i > 1 and "↳ " or "✎ ") .. who, text = body }
       end
       ret[#ret + 1] = {
         lnum = l1 - 1,
@@ -128,6 +132,7 @@ local function thread_diagnostics(st, rel)
         severity = vim.diagnostic.severity.INFO,
         source = "github",
         message = table.concat(msgs, "\n"),
+        user_data = { parts = parts },
       }
     end
   end
@@ -140,8 +145,14 @@ function M.decorate(buf)
   if not (st and rel) then
     return
   end
-  vim.diagnostic.set(M.ns.threads, buf, thread_diagnostics(st, rel))
-  vim.diagnostic.set(M.ns.agent, buf, require("review.agent").diagnostics(st, rel))
+  local threads, findings = thread_diagnostics(st, rel), require("review.agent").diagnostics(st, rel)
+  vim.diagnostic.set(M.ns.threads, buf, threads)
+  vim.diagnostic.set(M.ns.agent, buf, findings)
+  local notes = {}
+  for _, d in ipairs(vim.list_extend(vim.deepcopy(threads), findings)) do
+    notes[#notes + 1] = { lnum = d.end_lnum or d.lnum, severity = d.severity, parts = d.user_data.parts }
+  end
+  require("review.notes").render(buf, notes)
 end
 
 local function decorate_all()
@@ -169,7 +180,7 @@ function M.refresh_threads()
   require("review.panel").render()
 end
 
---- PR title and description, in the file window.
+--- PR title and description in a float (again to focus it and scroll).
 function M.show_description()
   local st = M.active()
   if not st then
@@ -182,18 +193,12 @@ function M.show_description()
     "",
   }
   vim.list_extend(lines, vim.split(vim.trim(st.body ~= "" and st.body or "_No description._"), "\r?\n"))
-  local name = ("review://pr-%d"):format(st.number)
-  local buf = vim.fn.bufnr(name)
-  if buf == -1 then
-    buf = vim.api.nvim_create_buf(true, true)
-    vim.api.nvim_buf_set_name(buf, name)
-  end
-  vim.bo[buf].modifiable = true
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-  vim.bo[buf].modifiable, vim.bo[buf].filetype = false, "markdown"
-  local win = st.main_win and vim.api.nvim_win_is_valid(st.main_win) and st.main_win or vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(win, buf)
-  vim.api.nvim_set_current_win(win)
+  vim.lsp.util.open_floating_preview(lines, "markdown", {
+    border = "rounded",
+    focus_id = "review_description",
+    max_width = math.min(100, vim.o.columns - 10),
+    max_height = math.floor(vim.o.lines * 0.7),
+  })
 end
 
 --- Per-file change status and line counts, and the first line of each hunk.
@@ -273,21 +278,13 @@ function M.start(ref)
       })
       assert(choice == "Discard and continue", "Cancelled")
     end
-    M.close({ keep_tab = true })
+    M.close()
     sh({ "git", "checkout", "--quiet", "--detach", "--force", pr.headRefOid }, { cwd = root })
     local merge_base = sh({ "git", "merge-base", pr.headRefOid, "origin/" .. pr.baseRefName }, { cwd = root })
     local files = sh({ "git", "diff", "--name-only", merge_base, pr.headRefOid }, { cwd = root })
     local owner, name = pr.url:match("github%.com/([^/]+)/([^/]+)/pull")
     local stats, hunks = diff_info(root, merge_base, pr.headRefOid)
 
-    local tab = M.state and vim.api.nvim_tabpage_is_valid(M.state.tab) and M.state.tab
-    if tab then
-      vim.api.nvim_set_current_tabpage(tab)
-    else
-      vim.cmd.tabnew()
-      tab = vim.api.nvim_get_current_tabpage()
-    end
-    vim.cmd.tcd(vim.fn.fnameescape(root))
     M.state = {
       number = pr.number,
       title = pr.title,
@@ -301,17 +298,17 @@ function M.start(ref)
       head = pr.headRefOid,
       merge_base = merge_base,
       root = root,
-      tab = tab,
+      tab = -1, -- set by panel.open_view
       files = vim.split(files, "\n", { trimempty = true }),
       stats = stats,
       hunks = hunks,
       viewed = {},
       threads = {},
     }
-    vim.t[tab].review = pr.number
-    M.show_description()
     local panel = require("review.panel")
+    panel.open_view(M.state)
     panel.show()
+    M.show_description()
     require("review.agent").start(M.state)
     M.refresh_threads()
     panel.render()
@@ -416,7 +413,7 @@ function M.submit(event)
   end)
 end
 
-function M.close(opts)
+function M.close()
   local st = M.state
   if not st then
     return
@@ -426,17 +423,17 @@ function M.close(opts)
     st.agent_job = nil
     pcall(job.kill, job, 15)
   end
+  M.state = nil
+  for _, v in ipairs(package.loaded["diffview.lib"] and require("diffview.lib").views or {}) do
+    if v.tabpage == st.tab then
+      v:close()
+    end
+  end
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     local name = vim.api.nvim_buf_get_name(buf)
     if (vim.fs.relpath(st.root, name) or name:match("^review://")) and not vim.bo[buf].modified then
       pcall(vim.api.nvim_buf_delete, buf, { force = true })
     end
-  end
-  if not (opts and opts.keep_tab) then
-    if vim.api.nvim_tabpage_is_valid(st.tab) and #vim.api.nvim_list_tabpages() > 1 then
-      vim.cmd.tabclose(vim.api.nvim_tabpage_get_number(st.tab))
-    end
-    M.state = nil
   end
 end
 
@@ -485,11 +482,45 @@ function M.setup()
       end
     end,
   })
-  vim.api.nvim_create_autocmd("BufReadPost", {
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "DiffviewViewClosed",
+    callback = function()
+      if M.state and not vim.api.nvim_tabpage_is_valid(M.state.tab) then
+        M.close()
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd({ "BufReadPost", "BufWinEnter" }, {
     group = group,
     callback = function(ev)
       if M.relpath(ev.buf) then
         M.decorate(ev.buf)
+      end
+    end,
+  })
+  -- diffview fills its windows asynchronously; redraw once both sides are in place
+  vim.api.nvim_create_autocmd("User", {
+    group = group,
+    pattern = "DiffviewDiffBufWinEnter",
+    callback = vim.schedule_wrap(function()
+      for _, w in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+        local b = vim.api.nvim_win_get_buf(w)
+        if M.relpath(b) then
+          M.decorate(b)
+        end
+      end
+    end),
+  })
+  -- comment blocks wrap to the window width
+  vim.api.nvim_create_autocmd("WinResized", {
+    group = group,
+    callback = function()
+      for _, w in ipairs(vim.v.event.windows or {}) do
+        local b = vim.api.nvim_win_is_valid(w) and vim.api.nvim_win_get_buf(w)
+        if b and M.relpath(b) then
+          M.decorate(b)
+        end
       end
     end,
   })

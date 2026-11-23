@@ -4,6 +4,8 @@ return {
   {
     "neovim/nvim-lspconfig",
     opts = {
+      -- borderless floats blend into the code behind them
+      diagnostics = { float = { border = "rounded", source = "if_many" } },
       servers = {
         ["*"] = {
           -- stylua: ignore

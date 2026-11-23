@@ -80,6 +80,7 @@ function M.diagnostics(st, rel)
         severity = severity[f.kind],
         source = "copilot",
         message = ("%s: %s"):format(f.kind, f.message),
+        user_data = { parts = { { head = "⚑ " .. f.kind, text = f.message } } },
       }
     end
   end

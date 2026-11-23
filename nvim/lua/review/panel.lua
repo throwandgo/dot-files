@@ -1,4 +1,4 @@
--- Review cockpit: a sidebar in the review tab with what's left to do, where everything is, and the
+-- Review cockpit: a sidebar in the review tab (a diffview of the PR) with what's left to do, where everything is, and the
 -- keys to get there. Files carry GitHub's "Viewed" state (synced both ways), agent findings and
 -- threads link to their lines, and the top line always names the next step.
 local gh = require("review.gh")
@@ -61,66 +61,76 @@ local function win(st)
   end
 end
 
---- Window that shows files: the last one used, else any normal window, else a new one.
-local function main_win(st)
-  local pw = win(st)
-  local function usable(w)
-    return w
-      and vim.api.nvim_win_is_valid(w)
-      and vim.api.nvim_win_get_tabpage(w) == st.tab
-      and vim.api.nvim_win_get_config(w).relative == ""
-      and w ~= pw
-  end
-  if usable(st.main_win) then
-    return st.main_win
-  end
-  for _, w in ipairs(vim.api.nvim_tabpage_list_wins(st.tab)) do
-    if usable(w) then
-      st.main_win = w
-      return w
+--- The review's diffview (its tab is the review tab).
+local function view(st)
+  local ok, lib = pcall(require, "diffview.lib")
+  for _, v in ipairs(ok and lib.views or {}) do
+    if v.tabpage == st.tab then
+      return v
     end
   end
-  vim.api.nvim_set_current_win(pw)
-  vim.cmd("rightbelow vsplit")
-  st.main_win = vim.api.nvim_get_current_win()
-  return st.main_win
 end
 
---- Side-by-side diff of the PR in diffview, starting at `path`.
-function M.diff(path)
-  local st = review().active()
-  if st then
-    vim.cmd(
-      ("DiffviewOpen %s -C%s --selected-file=%s"):format(
-        st.merge_base,
-        vim.fn.fnameescape(st.root),
-        vim.fn.fnameescape(vim.fs.joinpath(st.root, path))
-      )
+--- Right side of the diff: the worktree file, at the PR head (LSP, gd, gitsigns work there).
+local function main_win(st)
+  local v = view(st)
+  local w = v and v.cur_layout and v.cur_layout:get_main_win()
+  return w and w.id and vim.api.nvim_win_is_valid(w.id) and w.id or nil
+end
+
+local function current_path(st)
+  local v = view(st)
+  return v and v.panel.cur_file and v.panel.cur_file.path
+end
+
+--- Open the PR diff (merge-base → worktree) in a new tab, which becomes the review tab. The panel
+--- replaces diffview's own file list.
+function M.open_view(st, path)
+  vim.cmd(
+    ("DiffviewOpen %s -C%s --selected-file=%s"):format(
+      st.merge_base,
+      vim.fn.fnameescape(st.root),
+      vim.fn.fnameescape(vim.fs.joinpath(st.root, path or st.files[1]))
     )
-  end
+  )
+  local v = require("diffview.lib").get_current_view()
+  st.tab = v.tabpage
+  vim.t[st.tab].review = st.number
+  vim.cmd.tcd(vim.fn.fnameescape(st.root))
+  v.panel:close()
 end
 
---- Open `path` (repo-relative) in the main window, at `lnum` or its first change. Deleted files
---- only exist in the diff.
+--- Show `path` (repo-relative) in the diff, at `lnum` or its first change.
 function M.open(path, lnum)
   local st = review().active()
   if not st then
     return
   end
-  if (st.stats[path] or {}).status == "D" then
-    return M.diff(path)
+  local v = view(st)
+  if not v then
+    M.open_view(st, path)
+    v = view(st)
+  else
+    vim.api.nvim_set_current_tabpage(st.tab)
+    v:set_file_by_path(path, true)
   end
-  local w = main_win(st)
-  vim.api.nvim_set_current_win(w)
-  vim.cmd.edit(vim.fn.fnameescape(vim.fs.joinpath(st.root, path)))
   lnum = lnum or (st.hunks[path] or {})[1] or 1
-  pcall(vim.api.nvim_win_set_cursor, w, { math.min(lnum, vim.api.nvim_buf_line_count(0)), 0 })
-  vim.cmd("normal! zz")
-end
-
-local function current_path(st)
-  local mw = st.main_win
-  return mw and vim.api.nvim_win_is_valid(mw) and review().relpath(vim.api.nvim_win_get_buf(mw))
+  local file = vim.fs.joinpath(st.root, path)
+  -- set_file is async: place the cursor once the worktree file is in the main window
+  local tries = 0
+  local function place()
+    local w = main_win(st)
+    if w and current_path(st) == path and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(w)) == file then
+      vim.api.nvim_set_current_win(w)
+      vim.cmd("wincmd =") -- the panel keeps its width; the two sides split the rest evenly
+      pcall(vim.api.nvim_win_set_cursor, w, { math.min(lnum, vim.api.nvim_buf_line_count(0)), 0 })
+      vim.cmd("normal! zz")
+    elseif tries < 100 and (st.stats[path] or {}).status ~= "D" then
+      tries = tries + 1
+      vim.defer_fn(place, 20)
+    end
+  end
+  place()
 end
 
 --- Next (or previous) changed file after `from`; with `unviewed`, skips viewed ones.
@@ -361,11 +371,12 @@ function M.render()
 
   -- stylua: ignore
   for _, row in ipairs({
-    { "<CR>", "open", "d", "diff", "v", "viewed" },
+    { "<CR>", "open diff", "v", "viewed" },
     { "n", "next unviewed", "]r [r", "next/prev file" },
     { "K", "details/description", "h", "hunks" },
     { "a", "ask agent", "i", "impact", "s", "submit" },
     { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end" },
+    { "<leader>r", "+ key: same, from the diff" },
   }) do
     local chunks = {}
     for i = 1, #row, 2 do
@@ -439,13 +450,6 @@ local function create_buf()
   map("o", act, "Open")
   map("<2-LeftMouse>", act, "Open")
   map("K", hover, "Details")
-  map("d", function()
-    local st = review().active()
-    local p = path() or (st and (current_path(st) or st.files[1]))
-    if p then
-      M.diff(p)
-    end
-  end, "Diff (diffview)")
   map("v", function()
     local p = path()
     M.toggle_viewed(p)
@@ -475,11 +479,11 @@ local function create_buf()
     Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root })
   end, "Changed hunks")
   map("i", function()
-    vim.api.nvim_set_current_win(main_win(review().active()))
+    vim.api.nvim_set_current_win(main_win(review().active()) or 0)
     require("review.impact").open()
   end, "Impact (callers)")
   map("a", function()
-    vim.api.nvim_set_current_win(main_win(review().active()))
+    vim.api.nvim_set_current_win(main_win(review().active()) or 0)
     require("sidekick.cli").prompt()
   end, "Ask agent")
   map("s", M.submit, "Submit review")
@@ -490,14 +494,16 @@ local function create_buf()
     vim.ui.open(review().active().url)
   end, "Open in browser")
   map("q", M.hide, "Hide panel")
-  map("Q", function()
-    util.run(function()
-      if util.select({ "End review", "Cancel" }, { prompt = "Close the review tab?" }) == "End review" then
-        review().close()
-      end
-    end)
-  end, "End review")
+  map("Q", M.confirm_close, "End review")
   return b
+end
+
+function M.confirm_close()
+  util.run(function()
+    if util.select({ "End review", "Cancel" }, { prompt = "Close the review tab?" }) == "End review" then
+      review().close()
+    end
+  end)
 end
 
 function M.hide()
@@ -517,10 +523,6 @@ function M.show()
   local w = win(st)
   if not w then
     local b = buf() or create_buf()
-    local cur = vim.api.nvim_get_current_win()
-    if vim.api.nvim_win_get_tabpage(cur) == st.tab then
-      st.main_win = st.main_win or cur
-    end
     vim.api.nvim_set_current_tabpage(st.tab)
     vim.cmd(("topleft vertical %dsplit"):format(WIDTH))
     w = vim.api.nvim_get_current_win()
@@ -539,6 +541,7 @@ function M.show()
     }) do
       vim.wo[w][opt] = val
     end
+    vim.cmd("wincmd =") -- the panel keeps its width; the two sides split the rest evenly
   end
   M.render()
   vim.api.nvim_set_current_win(w)
@@ -553,13 +556,66 @@ function M.toggle_focus()
   local st = review().active()
   local w = st and win(st)
   if w and vim.api.nvim_get_current_win() == w then
-    vim.api.nvim_set_current_win(main_win(st))
+    vim.api.nvim_set_current_win(main_win(st) or w)
   else
     M.show()
   end
 end
 
---- Called on BufEnter in the review tab: remember the file window and follow it in the panel.
+--- Called on BufEnter in the review tab: follow the diffed file in the panel.
+--- The panel's actions inside the diff: <leader>r + the panel key (which-key lists them).
+local function diff_keys(b)
+  local function map(mode, lhs, fn, desc)
+    vim.keymap.set(mode, lhs, fn, { buffer = b, desc = desc })
+  end
+  map("n", "]r", function()
+    M.jump(1)
+  end, "Next changed file (review)")
+  map("n", "[r", function()
+    M.jump(-1)
+  end, "Prev changed file (review)")
+  local function cur()
+    local st = review().active()
+    return st, st and current_path(st)
+  end
+  -- stylua: ignore
+  for _, k in ipairs({
+    { "n", function()
+      local st, p = cur()
+      local f = st and M.next_file(st, p, 1, true)
+      if f then M.open(f) else util.notify("Every file is viewed — <leader>rs to submit") end
+    end, "Next unviewed file" },
+    { "v", function()
+      local st, p = cur()
+      if not p then return end
+      M.toggle_viewed(p)
+      local f = st.viewed[p] and M.next_file(st, p, 1, true)
+      if f then M.open(f) end
+    end, "Toggle viewed (+ next unviewed)" },
+    { "c", function() review().comment() end, "Comment on line" },
+    { "K", function() review().show_description() end, "PR description" },
+    { "h", function() local st = review().active() Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root }) end, "Changed hunks" },
+    { "i", function() require("review.impact").open() end, "Impact (callers)" },
+    { "a", function() require("sidekick.cli").prompt() end, "Ask agent" },
+    { "s", M.submit, "Submit review" },
+    { "r", function() util.run(review().refresh_threads) end, "Refresh threads" },
+    { "p", M.toggle_focus, "Panel (show / focus)" },
+    { "x", function() vim.ui.open(review().active().url) end, "Open in browser" },
+    { "q", M.confirm_close, "End review" },
+  }) do
+    map("n", "<leader>r" .. k[1], k[2], k[3])
+  end
+  map("x", "<leader>rc", function()
+    local l1, l2 = vim.fn.line("v"), vim.fn.line(".")
+    vim.cmd.normal({ "\27", bang = true })
+    review().comment({ math.min(l1, l2), math.max(l1, l2) })
+  end, "Comment on lines")
+  local ok, wk = pcall(require, "which-key")
+  if ok then
+    wk.add({ { "<leader>r", group = "review", buffer = b } })
+  end
+end
+
 function M.on_enter(b)
   local st = review().active()
   if not st or vim.api.nvim_get_current_tabpage() ~= st.tab or b == buf() then
@@ -569,16 +625,10 @@ function M.on_enter(b)
   if vim.api.nvim_win_get_config(w).relative ~= "" then
     return
   end
-  st.main_win = w
-  local rel = review().relpath(b)
-  if rel and not vim.b[b].review_keys then
+  local rel = current_path(st)
+  if not vim.b[b].review_keys then
     vim.b[b].review_keys = true
-    vim.keymap.set("n", "]r", function()
-      M.jump(1)
-    end, { buffer = b, desc = "Next changed file (review)" })
-    vim.keymap.set("n", "[r", function()
-      M.jump(-1)
-    end, { buffer = b, desc = "Prev changed file (review)" })
+    diff_keys(b)
   end
   if win(st) then
     M.render()
