@@ -36,7 +36,8 @@ query($owner: String!, $name: String!, $number: Int!) {
       files(first: 100) { nodes { path viewerViewedState } }
       reviewThreads(first: 100) {
         nodes {
-          path line startLine isResolved isOutdated subjectType
+          id path line startLine isResolved isOutdated subjectType
+          viewerCanReply viewerCanResolve viewerCanUnresolve
           comments(first: 30) { nodes { author { login } body state } }
         }
       }
@@ -47,6 +48,27 @@ query($owner: String!, $name: String!, $number: Int!) {
 M.ADD_THREAD = [[
 mutation($input: AddPullRequestReviewThreadInput!) {
   addPullRequestReviewThread(input: $input) { thread { id } }
+}]]
+
+M.REPLY = [[
+mutation($input: AddPullRequestReviewThreadReplyInput!) {
+  addPullRequestReviewThreadReply(input: $input) { comment { id } }
+}]]
+
+M.RESOLVE = [[
+mutation($input: ResolveReviewThreadInput!) {
+  resolveReviewThread(input: $input) { thread { isResolved } }
+}]]
+
+M.UNRESOLVE = [[
+mutation($input: UnresolveReviewThreadInput!) {
+  unresolveReviewThread(input: $input) { thread { isResolved } }
+}]]
+
+-- no event: the review stays pending (GitHub allows one per user per PR)
+M.ADD_PENDING = [[
+mutation($input: AddPullRequestReviewInput!) {
+  addPullRequestReview(input: $input) { pullRequestReview { id } }
 }]]
 
 M.MARK_VIEWED = [[

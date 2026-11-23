@@ -31,6 +31,20 @@ return {
         desc = "PR Comment (lines)",
       },
       {
+        "<leader>gr",
+        function()
+          require("review").reply()
+        end,
+        desc = "PR Reply (thread on line)",
+      },
+      {
+        "<leader>gx",
+        function()
+          require("review").toggle_resolved()
+        end,
+        desc = "PR Resolve / reopen thread",
+      },
+      {
         "<leader>gi",
         function()
           require("review.impact").open()

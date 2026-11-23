@@ -352,21 +352,13 @@ function M.start(ref)
   end)
 end
 
-function M.comment(range)
-  local st = M.active()
-  local rel = M.relpath(0)
-  if not (st and rel) then
-    return notify("Not a file in the active review", vim.log.levels.WARN)
-  end
-  local l1, l2 = range and range[1] or vim.fn.line("."), range and range[2] or vim.fn.line(".")
-  local finding = require("review.agent").at(st, rel, l1, l2)
-  local loc = l1 == l2 and ("L" .. l2) or ("L%d-L%d"):format(l1, l2)
+--- Markdown float for writing a comment; `on_post(body)` on <c-s> unless the body is empty.
+local function compose(title, text, on_post)
   Snacks.win({
-    title = (" Comment %s:%s "):format(vim.fs.basename(rel), loc),
+    title = title,
     footer = " <c-s> post · q cancel ",
     footer_pos = "center",
-    text = finding and finding.message or "",
-
+    text = text,
     width = 0.6,
     height = 0.3,
     border = "rounded",
@@ -374,7 +366,7 @@ function M.comment(range)
     wo = { wrap = true, linebreak = true },
     fixbuf = true,
     on_win = function()
-      vim.cmd.startinsert({ bang = finding ~= nil })
+      vim.cmd.startinsert({ bang = text ~= "" })
     end,
     keys = {
       q = "close",
@@ -385,13 +377,111 @@ function M.comment(range)
           win:close()
           vim.cmd.stopinsert()
           if body ~= "" then
-            M.post_comment(rel, l1, l2, body)
+            on_post(body)
           end
         end,
         mode = { "n", "i" },
       },
     },
   })
+end
+
+function M.comment(range)
+  local st = M.active()
+  local rel = M.relpath(0)
+  if not (st and rel) then
+    return notify("Not a file in the active review", vim.log.levels.WARN)
+  end
+  local l1, l2 = range and range[1] or vim.fn.line("."), range and range[2] or vim.fn.line(".")
+  local finding = require("review.agent").at(st, rel, l1, l2)
+  local loc = l1 == l2 and ("L" .. l2) or ("L%d-L%d"):format(l1, l2)
+  compose((" Comment %s:%s "):format(vim.fs.basename(rel), loc), finding and finding.message or "", function(body)
+    M.post_comment(rel, l1, l2, body)
+  end)
+end
+
+local function thread_author(t)
+  local c = t.comments and t.comments.nodes and t.comments.nodes[1]
+  return c and c.author and c.author.login or "ghost"
+end
+
+--- "✓ @alice L12: first line of the comment", for choosing between threads on one line.
+local function thread_label(t)
+  local c = t.comments and t.comments.nodes and t.comments.nodes[1]
+  local body = c and vim.trim((c.body:gsub("^`L%d+%-?L?%d*`:%s*", ""):gsub("%s+", " "))) or ""
+  return ("%s@%s L%s: %s"):format(t.isResolved and "✓ " or "", thread_author(t), M.thread_lines(t) or "?", body)
+end
+
+--- The thread to act on: `t` when given (the panel passes it), else the thread on the cursor line
+--- of the review file, resolved ones included so they can be reopened. Asks when several match.
+local function pick_thread(t, prompt)
+  if t then
+    return t
+  end
+  local st, rel, lnum = M.active(), M.relpath(0), vim.fn.line(".")
+  assert(st and rel, "Not a file in the active review")
+  local found = vim.tbl_filter(function(x)
+    local l1, l2 = M.thread_lines(x)
+    return x.path == rel and l1 ~= nil and l1 <= lnum and lnum <= l2
+  end, st.threads or {})
+  assert(#found > 0, "No comment thread on this line")
+  table.sort(found, function(a, b)
+    return not a.isResolved and b.isResolved
+  end)
+  return #found == 1 and found[1] or util.select(found, { prompt = prompt, format_item = thread_label })
+end
+
+--- Reply to the thread on the cursor line (or `t`). Like comments, replies join your pending
+--- review: nothing is public until you submit.
+function M.reply(t)
+  run(function()
+    t = pick_thread(t, "Reply to")
+    if not t then
+      return
+    end
+    assert(t.viewerCanReply ~= false, "You can't reply to this thread")
+    local l1 = M.thread_lines(t)
+    local title = (" Reply to @%s · %s:%s "):format(
+      thread_author(t),
+      vim.fs.basename(t.path),
+      l1 and ("L" .. l1) or "file"
+    )
+    compose(title, "", function(body)
+      run(function()
+        local st = assert(M.active(), "No active review")
+        M.refresh_threads() -- the pending review may have been submitted or started elsewhere
+        if not st.pending_review then
+          st.pending_review =
+            gh.graphql(gh.ADD_PENDING, { input = { pullRequestId = st.id } }).addPullRequestReview.pullRequestReview.id
+        end
+        gh.graphql(gh.REPLY, {
+          input = { pullRequestReviewThreadId = t.id, pullRequestReviewId = st.pending_review, body = body },
+        })
+        notify("Reply added to your pending review")
+        M.refresh_threads()
+      end)
+    end)
+  end)
+end
+
+--- Resolve the thread on the cursor line (or `t`), or reopen it if already resolved. Unlike
+--- comments this is immediate on GitHub.
+function M.toggle_resolved(t)
+  run(function()
+    t = pick_thread(t, "Resolve / reopen")
+    if not t then
+      return
+    end
+    if t.isResolved then
+      assert(t.viewerCanUnresolve, "You can't reopen this thread")
+      gh.graphql(gh.UNRESOLVE, { input = { threadId = t.id } })
+    else
+      assert(t.viewerCanResolve, "You can't resolve this thread (pending threads can't be resolved until submitted)")
+      gh.graphql(gh.RESOLVE, { input = { threadId = t.id } })
+    end
+    notify(t.isResolved and "Thread reopened" or "Thread resolved")
+    M.refresh_threads()
+  end)
 end
 
 --- Adds a thread to your pending review (created on demand); nothing is public until you submit.

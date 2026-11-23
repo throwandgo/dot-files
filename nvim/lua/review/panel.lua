@@ -16,6 +16,7 @@ local WIDTH = 50
 ---@field lnum? integer
 ---@field detail? string
 ---@field run? fun()
+---@field thread? table
 
 ---@type table<integer, review.Item>
 local items = {}
@@ -384,27 +385,29 @@ function M.render()
         { #nodes > 1 and ("(%d) "):format(#nodes) or "", "ReviewDim" },
         { oneline(c.body, 200) },
         { t.isOutdated and "  outdated" or "", "ReviewDim" },
-      }, { kind = "thread", path = t.path, lnum = l1, detail = table.concat(detail, "\n") })
+      }, { kind = "thread", path = t.path, lnum = l1, thread = t, detail = table.concat(detail, "\n") })
     end
   end
   add({})
 
+  -- key help, grouped by what it's for
   -- stylua: ignore
-  for _, row in ipairs({
-    { "<CR>", "open diff", "v", "viewed" },
-    { "n", "next unviewed", "]r [r", "next/prev file" },
-    { "K", "details/description", "h", "hunks" },
-    { "a", "ask agent", "i", "impact", "s", "submit" },
-    { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end" },
-    { "<leader>r", "+ key: same, from the diff" },
+  for _, group in ipairs({
+    { "Move",    { "<CR>", "open", "n", "next unviewed", "h", "hunks" }, { "]r [r", "next/prev file" } },
+    { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "R", "reply", "X", "resolve / reopen" } },
+    { "Explore", { "K", "details", "i", "impact", "a", "ask agent" } },
+    { "Panel",   { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end" } },
   }) do
-    local chunks = {}
-    for i = 1, #row, 2 do
-      chunks[#chunks + 1] = { row[i], "ReviewKey" }
-      chunks[#chunks + 1] = { " " .. row[i + 1] .. "  ", "ReviewDim" }
+    for l = 2, #group do
+      local chunks = { { ("%-8s"):format(l == 2 and group[1] or ""), "ReviewSection" } }
+      for i = 1, #group[l], 2 do
+        chunks[#chunks + 1] = { group[l][i], "ReviewKey" }
+        chunks[#chunks + 1] = { " " .. group[l][i + 1] .. "  ", "ReviewDim" }
+      end
+      add(chunks)
     end
-    add(chunks)
   end
+  add({ { "<leader>r", "ReviewKey" }, { " + key does the same from the diff", "ReviewDim" } })
 
   vim.bo[b].modifiable = true
   vim.api.nvim_buf_set_lines(b, 0, -1, false, lines)
@@ -507,6 +510,22 @@ local function create_buf()
     require("sidekick.cli").prompt()
   end, "Ask agent")
   map("s", M.submit, "Submit review")
+  map("c", function()
+    vim.api.nvim_set_current_win(main_win(review().active()) or 0)
+    review().comment()
+  end, "Comment on the diff's cursor line")
+  local function on_thread(fn)
+    return function()
+      local it = item()
+      if it and it.thread then
+        fn(it.thread)
+      else
+        util.notify("Put the cursor on a thread (or use it on a line in the diff)", vim.log.levels.WARN)
+      end
+    end
+  end
+  map("R", on_thread(review().reply), "Reply to thread")
+  map("X", on_thread(review().toggle_resolved), "Resolve / reopen thread")
   map("r", function()
     util.run(review().refresh_threads)
   end, "Refresh")
@@ -613,6 +632,8 @@ local function diff_keys(b)
       if f then M.open(f) end
     end, "Toggle viewed (+ next unviewed)" },
     { "c", function() review().comment() end, "Comment on line" },
+    { "R", function() review().reply() end, "Reply to thread on line" },
+    { "X", function() review().toggle_resolved() end, "Resolve / reopen thread on line" },
     { "K", function() review().show_description() end, "PR description" },
     { "h", function() local st = review().active() Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root, cmd_args = { "-w" } }) end, "Changed hunks" },
     { "i", function() require("review.impact").open() end, "Impact (callers)" },
