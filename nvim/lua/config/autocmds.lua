@@ -18,3 +18,4 @@ vim.api.nvim_create_autocmd("FileType", {
 
 -- Scala/Java LSP safeguards (lua/scala/init.lua).
 require("scala").setup()
+require("understand").setup()

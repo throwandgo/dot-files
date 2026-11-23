@@ -181,6 +181,50 @@ local function steps(dir, check)
     "Bloop is the build server"
   )
 
+  -- Code-understanding features (gai, gap/gac) lean on Metals' call and type hierarchy.
+  local incoming = poll(main, "textDocument/prepareCallHierarchy", function()
+    return position_of(main, 4, "run")
+  end, function(result)
+    return #result > 0
+  end, 30000)
+  local callers = incoming
+      and vim.lsp.buf_request_sync(main, "callHierarchy/outgoingCalls", { item = incoming[1] }, 10000)
+    or {}
+  local calls_helper = false
+  for _, r in pairs(callers) do
+    for _, call in ipairs(r.result or {}) do
+      calls_helper = calls_helper or call.to.name == "greet"
+    end
+  end
+  check(calls_helper, "call hierarchy: run calls greet")
+
+  vim.cmd.edit(sbt_root .. "/modules/app/src/main/scala/smoke/Greeter.scala")
+  local greeter = vim.api.nvim_get_current_buf()
+  local subtypes
+  wait(30000, function()
+    local done = false
+    require("understand.hierarchy").collect(
+      metals[1],
+      greeter,
+      position_of(greeter, 2, "Greeter"),
+      "subtypes",
+      function(nodes)
+        subtypes = nodes and vim.tbl_map(function(n)
+          return n.item.name
+        end, nodes)
+        done = true
+      end
+    )
+    wait(10000, function()
+      return done
+    end)
+    return subtypes ~= nil and vim.tbl_contains(subtypes, "Helper")
+  end)
+  check(
+    subtypes ~= nil and vim.tbl_contains(subtypes, "Helper"),
+    ("type hierarchy: Helper extends Greeter (got %s)"):format(vim.inspect(subtypes))
+  )
+
   -- Java inside an sbt build goes to Metals, not jdtls.
   vim.cmd.edit(sbt_root .. "/modules/app/src/main/java/smoke/Util.java")
   local util = vim.api.nvim_get_current_buf()

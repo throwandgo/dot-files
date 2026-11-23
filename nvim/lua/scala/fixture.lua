@@ -23,8 +23,15 @@ local files = {
   ["sbt/modules/app/src/main/scala/smoke/Helper.scala"] = {
     "package smoke",
     "",
-    "object Helper {",
+    "object Helper extends Greeter {",
     '  def greet: String = "hi"',
+    "}",
+  },
+  ["sbt/modules/app/src/main/scala/smoke/Greeter.scala"] = {
+    "package smoke",
+    "",
+    "trait Greeter {",
+    "  def greet: String",
     "}",
   },
   ["sbt/modules/app/src/main/java/smoke/Util.java"] = {

@@ -154,6 +154,25 @@ local function check_clients()
   end
 end
 
+local function check_reaper()
+  local reaper = require("scala.reaper")
+  h.start("Idle server reaper")
+  local minutes = reaper.minutes()
+  if minutes <= 0 then
+    h.info("Disabled (vim.g.lsp_reaper_minutes = 0)")
+  else
+    h.ok(
+      ("Stops %s after %d min with none of their files visible (vim.g.lsp_reaper_minutes)"):format(
+        table.concat(reaper.names, "/"),
+        minutes
+      )
+    )
+  end
+  for _, r in ipairs(reaper.reaped) do
+    h.info(("Stopped %s at %s on %s"):format(r.name, vim.fn.fnamemodify(r.root, ":~"), os.date("%H:%M", r.at)))
+  end
+end
+
 local function check_root_finder()
   local fixture = require("scala.fixture")
   h.start("Build root detection")
@@ -191,6 +210,7 @@ function M.check()
   check_guards()
   check_runtimes()
   check_clients()
+  check_reaper()
   check_root_finder()
   check_smoke()
 end
