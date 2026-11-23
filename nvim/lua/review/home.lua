@@ -74,35 +74,61 @@ function M.refresh(force)
   end)
 end
 
---- "6 open  (active in last 7d)" style detail after a launcher's name.
-local function detail(text)
-  local c = M.data.counts
+-- Colour roles on the launchers: bold names, each count in its queue's accent (shared with the
+-- icon), plain units, dim separators and an italic 7d window.
+local HL = { label = "Title", unit = "Normal", sep = "NonText", window = "Comment" }
+local ACCENT = { mine = "Statement", you = "DiagnosticWarn", team = "DiagnosticHint", agent = "String" }
+
+--- Chunks after a launcher's name: counts (or loading / error), then the dimmed 7d window.
+local function detail(parts)
   if M.data.error then
-    return { "  " .. M.data.error:gsub("\n.*", ""), "DiagnosticError" }
+    return { { M.data.error:gsub("\n.*", ""), hl = "DiagnosticError" } }
   end
-  return { "  " .. (c and text(c) or loading and "counting…" or "") .. "  (" .. inbox.WINDOW .. ")", "Comment" }
+  local c = M.data.counts
+  if not c then
+    return { { loading and "counting…" or "", hl = HL.window } }
+  end
+  local out = {}
+  for i, p in ipairs(parts(c)) do
+    if i > 1 then
+      out[#out + 1] = { " · ", hl = HL.sep }
+    end
+    out[#out + 1] = { tostring(p[1]), hl = p[2] }
+    out[#out + 1] = { " " .. p[3], hl = HL.unit }
+  end
+  out[#out + 1] = { "  " .. inbox.WINDOW, hl = HL.window }
+  return out
 end
 
 --- Dashboard section: the PR launchers and the agent.
 function M.launchers()
   M.refresh()
-  local function item(icon, key, name, action, info)
-    local desc = { { name, "SnacksDashboardDesc" } }
-    if info then
-      desc[#desc + 1] = detail(info)
-    end
-    return { icon = icon, key = key, desc = desc, action = action }
+  local function item(icon, accent, key, name, extra)
+    local desc = { { ("%-17s"):format(name), hl = HL.label } }
+    vim.list_extend(desc, extra)
+    return { icon = { icon, hl = accent, width = 2 }, key = key, desc = desc }
   end
-  return {
-    padding = 1,
-    item(" ", "p", "My PRs", inbox.open_mine, function(c)
-      return ("%d open"):format(c.mine)
-    end),
-    item(" ", "r", "Reviews waiting", inbox.open, function(c)
-      return ("%d for you · %d more for LNE"):format(c.you, c.team)
-    end),
-    item(" ", "a", "Agent session (copilot)", M.agent),
-  }
+  local mine = item(
+    "\u{f407}",
+    ACCENT.mine,
+    "p",
+    "My PRs",
+    detail(function(c)
+      return { { c.mine, ACCENT.mine, "open" } }
+    end)
+  )
+  local reviews = item(
+    "\u{f441}",
+    ACCENT.you,
+    "r",
+    "Reviews waiting",
+    detail(function(c)
+      return { { c.you, ACCENT.you, "for you" }, { c.team, ACCENT.team, "more for LNE" } }
+    end)
+  )
+  local agent = item("\u{f4b8}", ACCENT.agent, "a", "Agent session", { { "copilot", hl = ACCENT.agent } })
+  mine.action, reviews.action, agent.action = inbox.open_mine, inbox.open, M.agent
+  return { padding = 1, mine, reviews, agent }
 end
 
 --- Show the homepage without clobbering work: jump to a tab already showing it, else use the

@@ -25,12 +25,12 @@ return {
           header = home().LOGO,
           -- stylua: ignore
           keys = {
-            { icon = " ", key = "f", desc = "Find file", action = ":lua Snacks.dashboard.pick('files')" },
-            { icon = " ", key = "g", desc = "Grep repo", action = function() require("search.zoekt").grep() end },
-            { icon = " ", key = "o", desc = "Recent files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
-            { icon = " ", key = "s", desc = "Restore session", section = "session" },
-            { icon = " ", key = "c", desc = "Config", action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
-            { icon = " ", key = "q", desc = "Quit", action = ":qa" },
+            { icon = "\u{f002} ", key = "f", desc = "Find file", action = ":lua Snacks.dashboard.pick('files')" },
+            { icon = "\u{f422} ", key = "g", desc = "Grep repo", action = function() require("search.zoekt").grep() end },
+            { icon = "\u{f1da} ", key = "o", desc = "Recent files", action = ":lua Snacks.dashboard.pick('oldfiles')" },
+            { icon = "\u{f021} ", key = "s", desc = "Restore session", section = "session" },
+            { icon = "\u{f013} ", key = "c", desc = "Config", action = ":lua Snacks.dashboard.pick('files', {cwd = vim.fn.stdpath('config')})" },
+            { icon = "\u{f426} ", key = "q", desc = "Quit", action = ":qa" },
           },
         },
         sections = {
