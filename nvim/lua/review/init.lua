@@ -299,7 +299,7 @@ function M.start(ref)
       merge_base = merge_base,
       root = root,
       tab = -1, -- set by panel.open_view
-      files = vim.split(files, "\n", { trimempty = true }),
+      files = require("review.rank").sort(vim.split(files, "\n", { trimempty = true })),
       stats = stats,
       hunks = hunks,
       viewed = {},

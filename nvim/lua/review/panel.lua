@@ -24,6 +24,7 @@ for name, link in pairs({
   ReviewTitle = "Title",
   ReviewDim = "Comment",
   ReviewSection = "Function",
+  ReviewGroup = "Type",
   ReviewNext = "DiagnosticOk",
   ReviewViewed = "DiagnosticOk",
   ReviewUnviewed = "DiagnosticWarn",
@@ -281,7 +282,22 @@ function M.render()
     { kind = "files" }
   )
   local ok_icons, icons = pcall(require, "mini.icons")
+  local rank = require("review.rank")
+  local group
   for _, path in ipairs(st.files) do
+    local g = rank.group(path)
+    if g ~= group then
+      group = g
+      local in_group = vim.tbl_filter(function(p)
+        return rank.group(p) == g
+      end, st.files)
+      local done = #vim.tbl_filter(function(p)
+        return st.viewed[p]
+      end, in_group)
+      add({ { " " .. rank.GROUPS[g] .. " ", "ReviewGroup" }, { ("%d/%d"):format(done, #in_group), "ReviewDim" } }, {
+        kind = "group",
+      })
+    end
     local s = st.stats[path] or {}
     local icon, icon_hl = "", nil
     if ok_icons then
