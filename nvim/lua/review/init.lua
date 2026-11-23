@@ -22,6 +22,12 @@ local M = {}
 ---@field root string worktree
 ---@field tab integer
 ---@field files string[] changed paths (repo-relative)
+---@field stats table<string, {status: string, add?: string, del?: string}>
+---@field hunks table<string, integer[]> first new-side line of each hunk
+---@field viewed table<string, boolean> GitHub's per-file "Viewed" state
+---@field ci? string status check rollup of the head commit
+---@field decision? string
+---@field main_win? integer window the panel opens files in
 ---@field threads table[]
 ---@field pending_review? string
 ---@field findings? review.Finding[]
@@ -60,7 +66,7 @@ local function worktree(src)
     vim.fn.mkdir(vim.fs.dirname(root), "p")
     sh({ "git", "-C", src, "worktree", "add", "--detach", "--quiet", root })
   end
-  return root
+  return vim.uv.fs_realpath(root) or root -- buffer names are resolved paths
 end
 
 --- Buffers loaded from the worktree.
@@ -90,7 +96,7 @@ end
 
 --- Start and end line of a thread. File-level comments posted from here carry their lines as a
 --- `L12` / `L12-L14` body prefix.
-local function thread_lines(t)
+function M.thread_lines(t)
   local first = t.comments and t.comments.nodes and t.comments.nodes[1]
   local l1, l2 = (first and first.body or ""):match("^`L(%d+)%-?L?(%d*)`:")
   if l1 then
@@ -104,7 +110,7 @@ end
 local function thread_diagnostics(st, rel)
   local ret = {}
   for _, t in ipairs(st.threads or {}) do
-    local l1, l2 = thread_lines(t)
+    local l1, l2 = M.thread_lines(t)
     if t.path == rel and l1 and not t.isResolved then
       local msgs = {}
       for i, c in ipairs(t.comments and t.comments.nodes or {}) do
@@ -153,11 +159,22 @@ function M.refresh_threads()
   local pr = data.repository.pullRequest
   st.threads = pr.reviewThreads.nodes or {}
   st.pending_review = pr.reviews.nodes and pr.reviews.nodes[1] and pr.reviews.nodes[1].id or nil
+  st.decision = pr.reviewDecision
+  local commit = pr.commits.nodes and pr.commits.nodes[1] and pr.commits.nodes[1].commit
+  st.ci = commit and commit.statusCheckRollup and commit.statusCheckRollup.state or nil
+  for _, f in ipairs(pr.files and pr.files.nodes or {}) do
+    st.viewed[f.path] = f.viewerViewedState == "VIEWED"
+  end
   decorate_all()
+  require("review.panel").render()
 end
 
-local function overview(st)
-  local numstat = sh({ "git", "diff", "--numstat", st.merge_base, st.head }, { cwd = st.root })
+--- PR title and description, in the file window.
+function M.show_description()
+  local st = M.active()
+  if not st then
+    return
+  end
   local lines = {
     ("# #%d %s"):format(st.number, st.title),
     "",
@@ -165,13 +182,6 @@ local function overview(st)
     "",
   }
   vim.list_extend(lines, vim.split(vim.trim(st.body ~= "" and st.body or "_No description._"), "\r?\n"))
-  vim.list_extend(lines, { "", ("## Files (%d) — gf to open"):format(#st.files), "" })
-  for _, l in ipairs(vim.split(numstat, "\n", { trimempty = true })) do
-    local add, del, path = l:match("^(%S+)%s+(%S+)%s+(.+)$")
-    if path then
-      lines[#lines + 1] = ("%s  +%s -%s"):format(path, add, del)
-    end
-  end
   local name = ("review://pr-%d"):format(st.number)
   local buf = vim.fn.bufnr(name)
   if buf == -1 then
@@ -181,7 +191,41 @@ local function overview(st)
   vim.bo[buf].modifiable = true
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.bo[buf].modifiable, vim.bo[buf].filetype = false, "markdown"
-  vim.api.nvim_set_current_buf(buf)
+  local win = st.main_win and vim.api.nvim_win_is_valid(st.main_win) and st.main_win or vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(win, buf)
+  vim.api.nvim_set_current_win(win)
+end
+
+--- Per-file change status and line counts, and the first line of each hunk.
+local function diff_info(root, base, head)
+  local stats, hunks = {}, {}
+  for _, l in
+    ipairs(vim.split(sh({ "git", "diff", "--name-status", base, head }, { cwd = root }), "\n", { trimempty = true }))
+  do
+    local parts = vim.split(l, "\t")
+    stats[parts[#parts]] = { status = parts[1]:sub(1, 1) }
+  end
+  for _, l in
+    ipairs(vim.split(sh({ "git", "diff", "--numstat", base, head }, { cwd = root }), "\n", { trimempty = true }))
+  do
+    local add, del, path = l:match("^(%S+)%s+(%S+)%s+(.+)$")
+    path = path and path:gsub("^(.-){(.-) => (.-)}(.*)$", "%1%3%4"):gsub("^.* => ", "")
+    if path and stats[path] and add ~= "-" then
+      stats[path].add, stats[path].del = add, del
+    end
+  end
+  local file
+  for l in vim.gsplit(sh({ "git", "diff", "-U0", "--no-color", base, head }, { cwd = root }), "\n") do
+    if l:match("^%+%+%+ ") then
+      file = l:match("^%+%+%+ b/(.+)$") -- nil for deletions
+    end
+    local start = l:match("^@@ %-%S+ %+(%d+)")
+    if file and start then
+      hunks[file] = hunks[file] or {}
+      table.insert(hunks[file], math.max(tonumber(start), 1))
+    end
+  end
+  return stats, hunks
 end
 
 --- Open PR `ref` (number or URL) for review. Without `ref`, pick from PRs awaiting your review.
@@ -234,6 +278,7 @@ function M.start(ref)
     local merge_base = sh({ "git", "merge-base", pr.headRefOid, "origin/" .. pr.baseRefName }, { cwd = root })
     local files = sh({ "git", "diff", "--name-only", merge_base, pr.headRefOid }, { cwd = root })
     local owner, name = pr.url:match("github%.com/([^/]+)/([^/]+)/pull")
+    local stats, hunks = diff_info(root, merge_base, pr.headRefOid)
 
     local tab = M.state and vim.api.nvim_tabpage_is_valid(M.state.tab) and M.state.tab
     if tab then
@@ -258,12 +303,18 @@ function M.start(ref)
       root = root,
       tab = tab,
       files = vim.split(files, "\n", { trimempty = true }),
+      stats = stats,
+      hunks = hunks,
+      viewed = {},
       threads = {},
     }
     vim.t[tab].review = pr.number
-    overview(M.state)
+    M.show_description()
+    local panel = require("review.panel")
+    panel.show()
     require("review.agent").start(M.state)
     M.refresh_threads()
+    panel.render()
   end)
 end
 
@@ -365,23 +416,6 @@ function M.submit(event)
   end)
 end
 
-local function pick_threads(st)
-  local items = {}
-  for _, t in ipairs(st.threads or {}) do
-    local c = t.comments and t.comments.nodes and t.comments.nodes[1]
-    if c and not t.isResolved then
-      items[#items + 1] = {
-        file = t.path,
-        cwd = st.root,
-        pos = { thread_lines(t) or 1, 0 },
-        text = ("@%s %s"):format(c.author and c.author.login or "ghost", (c.body:gsub("%s+", " "))),
-        label = t.isOutdated and "outdated" or nil,
-      }
-    end
-  end
-  Snacks.picker.pick({ title = "Unresolved threads", items = items, format = "file" })
-end
-
 function M.close(opts)
   local st = M.state
   if not st then
@@ -406,101 +440,13 @@ function M.close(opts)
   end
 end
 
---- `<leader>gR`: start a review, or the action menu when inside one.
+--- `<leader>gR`: start a review, or jump between the review panel and the file.
 function M.menu()
   local st = M.active()
   if not st or vim.api.nvim_get_current_tabpage() ~= st.tab then
     return M.start()
   end
-  local agent = require("review.agent")
-  local actions = {
-    {
-      "Overview",
-      function()
-        run(function()
-          overview(st)
-        end)
-      end,
-    },
-    {
-      "Changed hunks",
-      function()
-        Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root })
-      end,
-    },
-    {
-      agent.label(st),
-      function()
-        agent.open(st)
-      end,
-    },
-    {
-      "Impact: callers of changed code",
-      function()
-        require("review.impact").open()
-      end,
-    },
-    {
-      ("Unresolved threads (%d)"):format(#vim.tbl_filter(function(t)
-        return not t.isResolved
-      end, st.threads or {})),
-      function()
-        pick_threads(st)
-      end,
-    },
-    {
-      "Refresh threads",
-      function()
-        run(M.refresh_threads)
-      end,
-    },
-    {
-      "Submit: Approve",
-      function()
-        M.submit("APPROVE")
-      end,
-    },
-    {
-      "Submit: Request changes",
-      function()
-        M.submit("REQUEST_CHANGES")
-      end,
-    },
-    {
-      "Submit: Comment",
-      function()
-        M.submit("COMMENT")
-      end,
-    },
-    {
-      "Re-run agent review",
-      function()
-        agent.start(st, { force = true })
-      end,
-    },
-    {
-      "Open in browser",
-      function()
-        vim.ui.open(st.url)
-      end,
-    },
-    {
-      "Close review",
-      function()
-        M.close()
-      end,
-    },
-  }
-  vim.ui.select(actions, {
-    prompt = ("PR #%d %s"):format(st.number, st.title),
-    format_item = function(a)
-      return a[1]
-    end,
-  }, function(a)
-    if a then
-      a[2]()
-    end
-  end)
+  require("review.panel").toggle_focus()
 end
 
 --- Sidekick `{pr}` context: tells the agent what "the change" is.
@@ -528,6 +474,14 @@ function M.setup()
     callback = function(ev)
       if ev.data and ev.data.buffer then
         gitsigns_base(ev.data.buffer)
+      end
+    end,
+  })
+  vim.api.nvim_create_autocmd("BufEnter", {
+    group = group,
+    callback = function(ev)
+      if M.state then
+        require("review.panel").on_enter(ev.buf)
       end
     end,
   })

@@ -31,6 +31,9 @@ query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviews(states: PENDING, first: 1) { nodes { id } }
+      reviewDecision
+      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      files(first: 100) { nodes { path viewerViewedState } }
       reviewThreads(first: 100) {
         nodes {
           path line startLine isResolved isOutdated subjectType
@@ -44,6 +47,16 @@ query($owner: String!, $name: String!, $number: Int!) {
 M.ADD_THREAD = [[
 mutation($input: AddPullRequestReviewThreadInput!) {
   addPullRequestReviewThread(input: $input) { thread { id } }
+}]]
+
+M.MARK_VIEWED = [[
+mutation($input: MarkFileAsViewedInput!) {
+  markFileAsViewed(input: $input) { clientMutationId }
+}]]
+
+M.UNMARK_VIEWED = [[
+mutation($input: UnmarkFileAsViewedInput!) {
+  unmarkFileAsViewed(input: $input) { clientMutationId }
 }]]
 
 M.SUBMIT = [[

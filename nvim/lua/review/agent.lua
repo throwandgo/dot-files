@@ -95,13 +95,6 @@ function M.at(st, rel, l1, l2)
   end
 end
 
-function M.label(st)
-  if st.agent_job then
-    return "Agent findings (running…)"
-  end
-  return ("Agent findings (%s)"):format(st.findings and #st.findings or "none yet")
-end
-
 local function apply(st)
   local items = {}
   for _, f in ipairs(st.findings) do
@@ -119,14 +112,7 @@ local function apply(st)
       review.decorate(buf)
     end
   end
-end
-
-function M.open(st)
-  if not st.findings then
-    return util.notify(st.agent_job and "Agent is still reviewing…" or "No agent results yet")
-  end
-  apply(st)
-  Snacks.picker.qflist({ title = ("PR #%d agent findings"):format(st.number) })
+  require("review.panel").render()
 end
 
 ---@param st review.State
@@ -181,7 +167,7 @@ function M.start(st, opts)
         apply(st)
       end
       util.notify(
-        ("Agent finished PR #%d in %ds: %d findings — <leader>gR → Agent findings"):format(
+        ("Agent finished PR #%d in %ds: %d findings (in the review panel)"):format(
           st.number,
           (vim.uv.hrtime() - started) / 1e9,
           #st.findings

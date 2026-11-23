@@ -1,5 +1,6 @@
--- PR review (lua/review/): worktree + tab per PR, agent pre-pass, impact map, GitHub threads as
--- diagnostics, and pending-review comments. The interactive agent is sidekick + copilot CLI.
+-- PR review (lua/review/): worktree + tab per PR with a cockpit panel (files with GitHub's Viewed
+-- state, agent findings, threads, next step), impact map, threads as diagnostics, pending comments.
+-- The interactive agent is sidekick + copilot CLI.
 return {
   {
     -- on snacks' spec so these win over its <leader>gi (GitHub issues; still on <leader>gI)
@@ -10,7 +11,7 @@ return {
         function()
           require("review").menu()
         end,
-        desc = "PR Review (start / menu)",
+        desc = "PR Review (start / panel)",
       },
       {
         "<leader>gC",
@@ -46,6 +47,33 @@ return {
         end,
       })
     end,
+  },
+  {
+    -- Review tab `d`: side-by-side PR diff. The worktree is at the PR head, so the right side is the
+    -- real file (LSP, gd, gitsigns work inside the diff).
+    "sindrets/diffview.nvim",
+    cmd = { "DiffviewOpen", "DiffviewFileHistory" },
+    opts = {
+      enhanced_diff_hl = true,
+      keymaps = {
+        view = { { "n", "q", "<cmd>DiffviewClose<cr>", { desc = "Close diffview" } } },
+        file_panel = {
+          { "n", "q", "<cmd>DiffviewClose<cr>", { desc = "Close diffview" } },
+          {
+            "n",
+            "v",
+            function()
+              local view = require("diffview.lib").get_current_view()
+              local item = view and view.panel:get_item_at_cursor()
+              if item and item.path then
+                require("review.panel").toggle_viewed(item.path)
+              end
+            end,
+            { desc = "Toggle viewed (PR review)" },
+          },
+        },
+      },
+    },
   },
   {
     "folke/sidekick.nvim",
