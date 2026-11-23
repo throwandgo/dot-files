@@ -40,6 +40,88 @@ function M.problem(kind, msg)
   notify(msg, vim.log.levels.ERROR)
 end
 
+local function tail_lines(path, max_bytes)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  local size = f:seek("end")
+  f:seek("set", math.max(0, size - max_bytes))
+  local s = f:read("*a")
+  f:close()
+  return vim.split(s, "\n", { plain = true })
+end
+
+---@class scala.Import
+---@field failed boolean last import failed
+---@field imported boolean last import succeeded
+---@field skipped boolean Metals' latest start skipped importing because the last one failed
+---@field cause string? first error of the failed import
+---@field server string? build server Metals last connected to
+
+-- Last build import recorded in <root>/.metals/metals.log.
+---@return scala.Import?
+function M.last_import(root)
+  local lines = tail_lines(root .. "/.metals/metals.log", 2 * 1024 * 1024)
+  if not lines then
+    return nil
+  end
+  local st = { failed = false, imported = false, skipped = false }
+  for _, raw in ipairs(lines) do
+    local line = raw:gsub("\27%[[%d;]*m", "")
+    st.server = line:match("Connected to Build server: (.+)$") or st.server
+    if line:match("running '.*bloopInstall") or line:match("running '.*gradle") then
+      st.failed, st.imported, st.skipped, st.cause = false, false, false, nil
+    elseif line:match("INFO  Started: Metals") then
+      st.skipped = false
+    elseif line:match("skipping build import with status 'Failed'") then
+      st.skipped = true
+    elseif not st.cause and (line:match("ERROR .-:%d+: error: ") or line:match("%[error%] %(")) then
+      st.cause = line:match("ERROR (.-:%d+: error: .*)$") or line:match("%[error%] (.*)$")
+    elseif line:match("ERROR sbt command failed") or line:match("ERROR .*[Ii]mport.* failed") then
+      st.failed = true
+    elseif line:match("time: ran 'sbt bloopInstall'") or line:match("time: imported build") then
+      st.imported = true
+    end
+  end
+  st.imported = st.imported and not st.failed
+  return st
+end
+
+---@param st scala.Import
+---@return string[]
+function M.import_advice(st, root)
+  local advice = {}
+  if st.cause and st.cause:match("%.sbt:%d+: error:") then
+    table.insert(
+      advice,
+      ("The build definition doesn't compile. Reproduce outside nvim: cd %s && sbt -batch exit"):format(
+        vim.fn.fnamemodify(root, ":~")
+      )
+    )
+  elseif st.cause then
+    table.insert(advice, "A task run during import failed; often local DB/Flyway: make -C metropolis/infrastructure up")
+  end
+  table.insert(advice, ":MetalsImportBuild once fixed (Metals won't retry a failed build until its files change)")
+  return advice
+end
+
+local function report_failed_import(root, why)
+  local st = root and M.last_import(root)
+  if not (st and st.failed) then
+    return
+  end
+  M.problem(
+    "build-import",
+    ("%s at %s: %s. %s"):format(
+      why,
+      vim.fn.fnamemodify(root, ":~"),
+      st.cause or "see .metals/metals.log",
+      table.concat(M.import_advice(st, root), ". ")
+    )
+  )
+end
+
 -- Prompts that autoImportBuilds/targetBuildTool exist to suppress (Metals' Messages.scala:
 -- ImportBuild, ImportBuildChanges, ChooseBuildTool).
 local function is_suppressed_prompt(params)
@@ -88,6 +170,11 @@ function M.patch_metals(metals_config)
   metals_config.handlers = metals_config.handlers or {}
   local show_request = metals_config.handlers["window/showMessageRequest"]
   metals_config.handlers["window/showMessageRequest"] = function(err, params, ctx, ...)
+    -- "Import project failed, no functionality will work... Switch build server" hides the cause in the log.
+    if params and (params.message or ""):find("Import project failed", 1, true) then
+      local client = vim.lsp.get_client_by_id(ctx.client_id)
+      report_failed_import(client and client.root_dir, "Build import failed")
+    end
     if params and is_suppressed_prompt(params) then
       M.problem(
         "metals-prompt",
@@ -173,6 +260,24 @@ local function check_attach(client, buf)
   end
 end
 
+local import_checked = {}
+
+-- Metals silently skips importing a build whose last import failed, so fixing the cause outside
+-- the build files (sbt plugins, infra) leaves every file with no build target.
+local function check_skipped_import(client)
+  local root = client.root_dir
+  if not root or import_checked[root] then
+    return
+  end
+  import_checked[root] = true
+  vim.defer_fn(function()
+    local st = M.last_import(root)
+    if st and st.skipped then
+      report_failed_import(root, "Metals skipped importing the build because its last import failed")
+    end
+  end, 3000)
+end
+
 function M.setup()
   vim.api.nvim_create_autocmd("LspAttach", {
     group = vim.api.nvim_create_augroup("scala_guards", { clear = true }),
@@ -180,6 +285,9 @@ function M.setup()
       local client = vim.lsp.get_client_by_id(ev.data.client_id)
       if client and (client.name == "metals" or client.name == "jdtls") then
         check_attach(client, ev.buf)
+      end
+      if client and client.name == "metals" then
+        check_skipped_import(client)
       end
     end,
   })

@@ -3,46 +3,27 @@ local M = {}
 
 local h = vim.health
 
-local function tail_lines(path, max_bytes)
-  local f = io.open(path, "r")
-  if not f then
-    return nil
-  end
-  local size = f:seek("end")
-  f:seek("set", math.max(0, size - max_bytes))
-  local s = f:read("*a")
-  f:close()
-  return vim.split(s, "\n", { plain = true })
-end
-
 -- Last build import and build server, from the workspace's .metals/metals.log.
 local function metals_log_status(root)
-  local lines = tail_lines(root .. "/.metals/metals.log", 2 * 1024 * 1024)
-  if not lines then
-    return h.info(("%s: no .metals/metals.log yet"):format(vim.fn.fnamemodify(root, ":~")))
-  end
-  local server, import_failed, cause, imported
-  for _, line in ipairs(lines) do
-    server = line:match("Connected to Build server: (.+)$") or server
-    if line:match("running '.*bloopInstall") or line:match("running '.*gradle") then
-      import_failed, cause, imported = false, nil, false
-    elseif line:match("%[error%] %(") then
-      cause = line:match("%[error%] (.*)$")
-    elseif line:match("ERROR sbt command failed") or line:match("ERROR .*[Ii]mport.* failed") then
-      import_failed = true
-    elseif line:match("time: ran 'sbt bloopInstall'") or line:match("time: imported build") then
-      imported = true
-    end
-  end
+  local guards = require("scala.guards")
   local name = vim.fn.fnamemodify(root, ":~")
-  if import_failed then
-    h.error(("%s: last build import failed%s"):format(name, cause and (": " .. cause) or ""), {
-      "Fix the error (often a local DB/Flyway task run during import), then :MetalsImportBuild",
-      "Make sure shared infra is up: make -C metropolis/infrastructure up",
-    })
-  elseif imported then
+  local st = guards.last_import(root)
+  if not st then
+    return h.info(("%s: no .metals/metals.log yet"):format(name))
+  end
+  if st.failed then
+    h.error(
+      ("%s: last build import failed%s%s"):format(
+        name,
+        st.cause and (": " .. st.cause) or "",
+        st.skipped and " (Metals is skipping re-import)" or ""
+      ),
+      guards.import_advice(st, root)
+    )
+  elseif st.imported then
     h.ok(("%s: build imported"):format(name))
   end
+  local server = st.server
   if server and server:match("^sbt") then
     h.warn(("%s: build server is %s (slower and heavier than Bloop)"):format(name, server), {
       ":MetalsSwitchBsp and pick Bloop",
