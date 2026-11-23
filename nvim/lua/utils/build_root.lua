@@ -69,9 +69,12 @@ local function ancestors(path)
   path = vim.fs.normalize(vim.fn.fnamemodify(path, ":p"))
   local start = vim.fn.isdirectory(path) == 1 and path or vim.fs.dirname(path)
   local stop = vim.fs.root(start, ".git") or vim.env.HOME
+  if not vim.startswith(start .. "/", stop .. "/") then
+    stop = nil
+  end
   local dirs = {}
   local dir = start
-  while dir and #dir >= #stop do
+  while dir do
     table.insert(dirs, dir)
     if dir == stop then
       break
@@ -104,6 +107,24 @@ function M.find(path, kinds)
       return root
     end
   end
+end
+
+-- Java in Gradle/Maven builds belongs to jdtls; Metals only takes Java that lives inside an sbt
+-- build, which jdtls can't import.
+---@return string|nil
+function M.metals_root(path)
+  if path:match("%.java$") then
+    if M.jdtls_root(path) then
+      return nil
+    end
+    return M.find(path, { sbt = true })
+  end
+  return M.find(path, { sbt = true, gradle = true })
+end
+
+---@return string|nil
+function M.jdtls_root(path)
+  return M.find(path, { gradle = true, maven = true })
 end
 
 return M

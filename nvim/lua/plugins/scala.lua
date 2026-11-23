@@ -1,18 +1,6 @@
 -- Metals tuned for large sbt/Gradle monorepos (layered on LazyVim's lang.scala extra).
 local build_root = require("utils.build_root")
 
--- Java in Gradle/Maven builds belongs to jdtls (lang.java extra); Metals only takes Java that
--- lives inside an sbt build, which jdtls can't import.
-local function metals_root(path)
-  if path:match("%.java$") then
-    if build_root.find(path, { gradle = true, maven = true }) then
-      return nil
-    end
-    return build_root.find(path, { sbt = true })
-  end
-  return build_root.find(path, { sbt = true, gradle = true })
-end
-
 local function metals_status()
   local parts = {}
   for _, var in ipairs({ "metals_status", "metals_bsp_status" }) do
@@ -51,29 +39,20 @@ return {
       }
 
       metals_config.find_root_dir = function(_, bufname)
-        return metals_root(bufname)
+        return build_root.metals_root(bufname)
       end
 
       return metals_config
     end,
     config = function(_, metals_config)
-      -- nvim-metals also re-reads $JAVA_OPTS itself and forwards it as -J flags; keep only the
-      -- workspace's .jvmopts.
-      local jvmopts = require("metals.jvmopts")
-      jvmopts.java_opts = jvmopts.java_opts_from_file
-      -- Real Metals settings missing from nvim-metals' allowlist (it warns on unknown keys).
-      local valid = require("metals.config").valid_metals_settings
-      for _, key in ipairs({ "autoImportBuilds", "targetBuildTool" }) do
-        if not vim.tbl_contains(valid, key) then
-          table.insert(valid, key)
-        end
-      end
+      -- Keeps $JAVA_OPTS out of Metals, allowlists our settings, and flags ignored settings.
+      require("scala.guards").patch_metals(metals_config)
 
       vim.api.nvim_create_autocmd("FileType", {
         group = vim.api.nvim_create_augroup("nvim-metals", { clear = true }),
         pattern = { "scala", "sbt", "java" },
         callback = function(ev)
-          if vim.bo[ev.buf].buftype ~= "" or not metals_root(vim.api.nvim_buf_get_name(ev.buf)) then
+          if vim.bo[ev.buf].buftype ~= "" or not build_root.metals_root(vim.api.nvim_buf_get_name(ev.buf)) then
             return
           end
           -- initialize_or_attach resolves the root from the current buffer.

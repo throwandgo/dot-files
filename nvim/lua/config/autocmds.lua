@@ -15,3 +15,6 @@ vim.api.nvim_create_autocmd("FileType", {
     vim.opt_local.colorcolumn = "73" -- visual guide at 72
   end,
 })
+
+-- Scala/Java LSP safeguards (lua/scala/init.lua).
+require("scala").setup()
