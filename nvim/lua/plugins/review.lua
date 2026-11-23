@@ -80,6 +80,14 @@ return {
     opts = {
       nes = { enabled = false }, -- edit suggestions aren't the goal; also keeps the copilot LSP off
       cli = {
+        win = {
+          keys = {
+            -- <space> is typed into the CLI and herdr doesn't pass <c-.>, so <c-q> (the CLI's own
+            -- ctrl+q was already shadowed by sidekick) collapses the panel; <c-\><c-n> for normal mode
+            stopinsert = false,
+            hide_t = { "<c-q>", "hide", mode = "t", desc = "hide the terminal window" },
+          },
+        },
         context = {
           pr = function()
             return require("review").context()
