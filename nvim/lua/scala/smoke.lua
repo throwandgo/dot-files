@@ -191,6 +191,32 @@ local function steps(dir, check)
     "Bloop is the build server"
   )
 
+  -- Inlay hints: inferred types only (`total: Int`), no implicit plumbing (`(using Numeric)`).
+  local function labels(hints)
+    local ret = {}
+    for _, h in ipairs(hints or {}) do
+      local label = h.label
+      if type(label) == "table" then
+        label = table.concat(vim.tbl_map(function(part)
+          return part.value
+        end, label))
+      end
+      ret[#ret + 1] = label
+    end
+    return table.concat(ret, " ")
+  end
+  local hints = poll(main, "textDocument/inlayHint", function()
+    return {
+      textDocument = vim.lsp.util.make_text_document_params(main),
+      range = { start = { line = 0, character = 0 }, ["end"] = { line = 7, character = 0 } },
+    }
+  end, function(result)
+    return labels(result):find("Int") ~= nil
+  end, 30000)
+  check(hints ~= nil, "inlay hint shows the inferred type of total")
+  local extra = hints and vim.trim(labels(hints):gsub(":%s*%S+", "")) or ""
+  check(hints ~= nil and extra == "", ("no implicit-argument hints (got %q)"):format(hints and labels(hints) or ""))
+
   -- Code-understanding features (gai, gap/gac) lean on Metals' call and type hierarchy.
   local incoming = poll(main, "textDocument/prepareCallHierarchy", function()
     return position_of(main, 4, "run")

@@ -15,6 +15,11 @@ end
 return {
   {
     "scalameta/nvim-metals",
+    -- stylua: ignore
+    keys = {
+      -- LazyVim's version needs telescope; this one uses vim.ui.select (snacks)
+      { "<leader>me", function() require("metals").commands() end, desc = "Metals commands" },
+    },
     opts = function(_, metals_config)
       local settings = metals_config.settings
       -- Import without waiting on the "Import build?" prompt, which is easy to miss and leaves the
@@ -25,6 +30,23 @@ return {
       -- "which build tool?" prompt.
       settings.targetBuildTool = "sbt"
       settings.serverProperties = { "-Xmx6G", "-XX:+UseStringDeduplication" }
+
+      -- LazyVim's extra turns on every implicit-argument/conversion decoration and verbose compile
+      -- logs. Keep only inferred types: they answer "what is this val?" while reading, the rest is
+      -- noise and makes Metals compute hints for every visible call.
+      settings.verboseCompilation = false
+      settings.showImplicitArguments = nil
+      settings.showImplicitConversionsAndClasses = nil
+      settings.showInferredType = nil
+      settings.superMethodLensesEnabled = nil -- codelens is off; gau jumps to the super method
+      settings.inlayHints = {
+        inferredTypes = { enable = true },
+        implicitArguments = { enable = false },
+        implicitConversions = { enable = false },
+        typeParameters = { enable = false },
+        hintsInPatternMatch = { enable = false },
+        byNameParameters = { enable = false },
+      }
 
       -- Surfaces import/indexing/compile progress in the statusline (see lualine below).
       metals_config.init_options.statusBarProvider = "on"

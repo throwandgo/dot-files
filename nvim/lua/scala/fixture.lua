@@ -18,6 +18,7 @@ local files = {
     "object Main {",
     "  val xs: List[Int] = List(1, 2)",
     "  def run(): String = Helper.greet",
+    "  val total = xs.sum",
     "}",
   },
   ["sbt/modules/app/src/main/scala/smoke/Helper.scala"] = {
