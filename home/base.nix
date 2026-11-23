@@ -226,6 +226,10 @@ in
     unstable.tree-sitter # parsing library for syntax highlighting
   ];
 
+  # jdtls >= 1.63 only runs on Java 25+. Expose a JDK at a fixed path for nvim to launch jdtls
+  # with, without putting it on PATH (sbt, Gradle, and projects stay on the system Java 21).
+  home.file.".local/share/jdtls-jdk".source = pkgs.jdk25_headless.home;
+
   programs.direnv = {
     enable = true;
     nix-direnv.enable = true;

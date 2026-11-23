@@ -12,6 +12,12 @@ vim.g.snacks_animate = false
 -- showing them in the menu, we instead show them in the virtual text.
 vim.g.ai_cmp = false
 
+-- Use snacks.picker instead of fzf-lua (LazyVim falls back to fzf-lua for configs created before
+-- v8). fzf-lua's live grep pipes every rg match through a separate nvim process to add icons
+-- and reformat paths, roughly doubling the time to show results on broad queries in a large
+-- repo; snacks streams rg output in-process and only renders the visible rows.
+vim.g.lazyvim_picker = "snacks"
+
 -- Disable the use of the LSP root for finding files (and other such things).
 --
 -- I never want the concept of the project root to be the LSP root, which is usually a subdirectory
