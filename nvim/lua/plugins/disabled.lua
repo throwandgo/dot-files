@@ -2,7 +2,6 @@
 return {
   { "catppuccin/nvim", enabled = false }, -- tokyonight is the colorscheme
   { "mfussenegger/nvim-lint", enabled = false }, -- only configured linter is fish
-  { "windwp/nvim-ts-autotag", enabled = false }, -- HTML/JSX tags
   { "rafamadriz/friendly-snippets", enabled = false }, -- generic snippets crowd LSP completions
   { "folke/trouble.nvim", enabled = false }, -- snacks diagnostics/qflist pickers, treesitter-context
   { "MagicDuck/grug-far.nvim", enabled = false }, -- Metals rename covers symbol renames
