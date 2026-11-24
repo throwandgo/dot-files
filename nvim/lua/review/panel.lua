@@ -426,45 +426,93 @@ function M.render()
   end
 end
 
--- key help, grouped by what it's for
+-- key help: sections side by side, keys sorted within each
 -- stylua: ignore
 local HELP = {
-  { "Move",    { "<CR>", "open", "n N", "next/prev unviewed", "h", "hunks" }, { "]r [r", "next/prev file", "]m [m", "next/prev comment" } },
-  { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "t", "threads — then R reply  X resolve  D delete pending" } },
-  { "Explore", { "K", "details", "i", "impact", "a", "ask agent" } },
-  { "Panel",   { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end review" } },
+  {
+    { "Move", { { "<CR>", "open" }, { "h", "hunks" }, { "]m [m", "next/prev comment" }, { "n N", "next/prev unviewed" }, { "]r [r", "next/prev file" } } },
+    { "Review", { { "c", "comment" }, { "s", "submit" }, { "t", "threads" }, { "v", "viewed" } } },
+  },
+  {
+    { "Threads list", { { "D", "delete pending" }, { "R", "reply" }, { "X", "resolve / reopen" } } },
+    { "Explore", { { "a", "ask agent" }, { "i", "impact" }, { "K", "details" } } },
+    { "Panel", { { "gx", "browser" }, { "q", "hide" }, { "Q", "end review" }, { "r", "refresh" } } },
+  },
 }
+
+--- Alphabetical by the key's letters (brackets ignored), lowercase before uppercase.
+local function key_order(a, b)
+  local ka, kb = a[1]:gsub("%W", ""), b[1]:gsub("%W", "")
+  if ka:lower() ~= kb:lower() then
+    return ka:lower() < kb:lower()
+  end
+  return ka > kb
+end
 
 --- The panel's keys in a popup (? again, q or <Esc> closes it).
 function M.help()
+  local kw = 0
+  for _, col in ipairs(HELP) do
+    for _, sec in ipairs(col) do
+      for _, e in ipairs(sec[2]) do
+        kw = math.max(kw, vim.fn.strdisplaywidth(e[1]))
+      end
+    end
+  end
+  -- each column: rows of chunks
+  local cols = {}
+  for c, col in ipairs(HELP) do
+    local rows = {}
+    for i, sec in ipairs(col) do
+      if i > 1 then
+        rows[#rows + 1] = {}
+      end
+      rows[#rows + 1] = { { sec[1], "ReviewSection" } }
+      local entries = vim.list_slice(sec[2])
+      table.sort(entries, key_order)
+      for _, e in ipairs(entries) do
+        rows[#rows + 1] = {
+          { "  " .. e[1] .. string.rep(" ", kw - vim.fn.strdisplaywidth(e[1]) + 2), "ReviewKey" },
+          { e[2], "ReviewDim" },
+        }
+      end
+    end
+    cols[c] = rows
+  end
+  local function width(row)
+    local w = 0
+    for _, ch in ipairs(row) do
+      w = w + vim.fn.strdisplaywidth(ch[1])
+    end
+    return w
+  end
+  local lw = 0
+  for _, row in ipairs(cols[1]) do
+    lw = math.max(lw, width(row))
+  end
   local lines, hls = {}, {}
   local function add(chunks)
-    local line = ""
-    for _, c in ipairs(chunks) do
-      hls[#hls + 1] = { #lines, #line, #line + #c[1], c[2] }
-      line = line .. c[1]
+    local line = " "
+    for _, ch in ipairs(chunks) do
+      hls[#hls + 1] = { #lines, #line, #line + #ch[1], ch[2] }
+      line = line .. ch[1]
     end
-    lines[#lines + 1] = " " .. line
+    lines[#lines + 1] = line
   end
-  for _, group in ipairs(HELP) do
-    for l = 2, #group do
-      local chunks = { { ("%-9s"):format(l == 2 and group[1] or ""), "ReviewSection" } }
-      for i = 1, #group[l], 2 do
-        chunks[#chunks + 1] = { group[l][i], "ReviewKey" }
-        chunks[#chunks + 1] = { " " .. group[l][i + 1] .. "   ", "ReviewDim" }
-      end
-      add(chunks)
-    end
+  for i = 1, math.max(#cols[1], #cols[2]) do
+    local left, right = cols[1][i] or {}, cols[2][i] or {}
+    local row = vim.list_extend(vim.list_slice(left), { { string.rep(" ", lw - width(left) + 4), "ReviewDim" } })
+    add(vim.list_extend(row, right))
   end
   add({})
   add({ { "<leader>r", "ReviewKey" }, { " + key does the same from the diff", "ReviewDim" } })
-  local width = 0
+  local w = 0
   for _, l in ipairs(lines) do
-    width = math.max(width, vim.fn.strdisplaywidth(l))
+    w = math.max(w, vim.fn.strdisplaywidth(l))
   end
-  local w = Snacks.win({
+  local win = Snacks.win({
     text = lines,
-    width = width + 1,
+    width = w + 1,
     height = #lines,
     border = "rounded",
     title = " Review keys ",
@@ -475,7 +523,7 @@ function M.help()
     keys = { q = "close", ["?"] = "close", ["<Esc>"] = "close" },
   })
   for _, h in ipairs(hls) do
-    vim.api.nvim_buf_set_extmark(w.buf, ns, h[1], h[2] + 1, { end_col = h[3] + 1, hl_group = h[4] })
+    vim.api.nvim_buf_set_extmark(win.buf, ns, h[1], h[2], { end_col = h[3], hl_group = h[4] })
   end
 end
 
