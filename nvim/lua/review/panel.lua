@@ -155,6 +155,47 @@ function M.jump(step)
   end
 end
 
+--- Open the next (or previous) open thread after `path`:`lnum` (default: the diff cursor), walking
+--- files in panel order and wrapping around.
+function M.jump_thread(step, path, lnum)
+  local st = review().active()
+  if not st then
+    return
+  end
+  local order, list = {}, {}
+  for i, f in ipairs(st.files) do
+    order[f] = i
+  end
+  for _, t in ipairs(st.threads or {}) do
+    local l1 = review().thread_lines(t)
+    if l1 and not t.isResolved and order[t.path] then
+      list[#list + 1] = { order[t.path], l1, t.path }
+    end
+  end
+  if #list == 0 then
+    return util.notify("No open comment threads")
+  end
+  table.sort(list, function(a, b)
+    return a[1] < b[1] or (a[1] == b[1] and a[2] < b[2])
+  end)
+  path = path or current_path(st) or review().relpath(0)
+  local here = { order[path] or 0, lnum or vim.fn.line(".") }
+  local function beyond(x) -- strictly past `here` in the direction of `step`
+    local d = x[1] ~= here[1] and x[1] - here[1] or x[2] - here[2]
+    return d * step > 0
+  end
+  local i = step > 0 and #list + 1 or 0
+  for j = step > 0 and 1 or #list, step > 0 and #list or 1, step do
+    if beyond(list[j]) then
+      i = j
+      break
+    end
+  end
+  i = (i - 1) % #list + 1
+  M.open(list[i][3], list[i][2])
+  vim.api.nvim_echo({ { ("comment %d/%d"):format(i, #list), "Comment" } }, false, {})
+end
+
 function M.toggle_viewed(path)
   local st = review().active()
   if not (st and path) then
@@ -393,7 +434,7 @@ function M.render()
   -- key help, grouped by what it's for
   -- stylua: ignore
   for _, group in ipairs({
-    { "Move",    { "<CR>", "open", "n", "next unviewed", "h", "hunks" }, { "]r [r", "next/prev file" } },
+    { "Move",    { "<CR>", "open", "n", "next unviewed", "h", "hunks" }, { "]r [r", "file", "]m [m", "comment" } },
     { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "R", "reply", "X", "resolve", "D", "delete pending" } },
     { "Explore", { "K", "details", "i", "impact", "a", "ask agent" } },
     { "Panel",   { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end" } },
@@ -497,6 +538,13 @@ local function create_buf()
   map("[r", function()
     M.jump(-1)
   end, "Prev changed file")
+  -- from the thread (or file) under the cursor
+  for lhs, step in pairs({ ["]m"] = 1, ["[m"] = -1 }) do
+    map(lhs, function()
+      local it = item() or {}
+      M.jump_thread(step, it.path, it.kind == "thread" and it.lnum or 0)
+    end, (step > 0 and "Next" or "Prev") .. " comment thread")
+  end
   map("h", function()
     local st = review().active()
     Snacks.picker.git_diff({ base = st.merge_base, cwd = st.root, cmd_args = { "-w" } })
@@ -614,6 +662,12 @@ local function diff_keys(b)
   map("n", "[r", function()
     M.jump(-1)
   end, "Prev changed file (review)")
+  map("n", "]m", function()
+    M.jump_thread(1)
+  end, "Next comment thread (review)")
+  map("n", "[m", function()
+    M.jump_thread(-1)
+  end, "Prev comment thread (review)")
   local function cur()
     local st = review().active()
     return st, st and current_path(st)
