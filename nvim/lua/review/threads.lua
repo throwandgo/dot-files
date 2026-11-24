@@ -14,8 +14,9 @@ local function login(c)
   return (l:gsub("^copilot%-pull%-request%-reviewer$", "copilot"))
 end
 
---- Open threads in panel file order: current ones by line, then outdated ones.
-local function items(st)
+--- Open threads in panel file order: current ones by line, then outdated ones. Threads in `keep`
+--- (resolved from the picker) stay listed so X can reopen them.
+local function items(st, keep)
   local rank = {}
   for i, f in ipairs(st.files) do
     rank[f] = i
@@ -23,7 +24,7 @@ local function items(st)
   local ret = {}
   for _, t in ipairs(st.threads or {}) do
     local nodes = t.comments and t.comments.nodes or {}
-    if not t.isResolved and #nodes > 0 then
+    if (not t.isResolved or keep[t.id]) and #nodes > 0 then
       local l1 = review().thread_lines(t)
       local lnum = l1 or t.originalLine
       local text = {}
@@ -41,6 +42,7 @@ local function items(st)
         file = t.path,
         lnum = lnum,
         outdated = t.isOutdated or not l1,
+        resolved = t.isResolved,
         pending = nodes[1].state == "PENDING",
         replies = #nodes - 1,
         author = login(nodes[1]),
@@ -53,7 +55,8 @@ local function items(st)
           text = ("# %s:%s%s\n\n`%s`\n\n%s"):format(
             vim.fs.basename(t.path),
             lnum or "file",
-            (t.isOutdated or not l1) and " · outdated (the code has changed since)" or "",
+            (t.isResolved and " · resolved" or "")
+              .. ((t.isOutdated or not l1) and " · outdated (the code has changed since)" or ""),
             t.path,
             table.concat(text, "\n---\n\n")
           ),
@@ -74,11 +77,14 @@ end
 
 local function format(item)
   return {
-    { item.pending and "✎ " or item.outdated and "◌ " or "● ", item.outdated and "Comment" or "DiagnosticInfo" },
+    item.resolved and { "✓ ", "DiagnosticOk" } or {
+      item.pending and "✎ " or item.outdated and "◌ " or "● ",
+      item.outdated and "Comment" or "DiagnosticInfo",
+    },
     { ("@%-14s "):format(#item.author > 14 and item.author:sub(1, 13) .. "…" or item.author), "Title" },
     { ("%s:%s "):format(vim.fs.basename(item.file), item.lnum or "file"), "Comment" },
     { item.replies > 0 and ("(%d ↳ @%s) "):format(item.replies, item.last) or "", "DiagnosticHint" },
-    { item.summary },
+    { item.summary, item.resolved and "Comment" or nil },
   }
 end
 
@@ -92,24 +98,32 @@ local function on_thread(fn)
   end
 end
 
+local function title(list)
+  local open, outdated = 0, 0
+  for _, i in ipairs(list) do
+    open, outdated = open + (i.resolved and 0 or 1), outdated + (not i.resolved and i.outdated and 1 or 0)
+  end
+  return ("Threads · %d open%s · R reply  X resolve/reopen  D delete pending"):format(
+    open,
+    outdated > 0 and (" (%d outdated)"):format(outdated) or ""
+  )
+end
+
 function M.open()
+  local util = require("review.util")
   local st = review().active()
   if not st then
-    return require("review.util").notify("No active review", vim.log.levels.WARN)
+    return util.notify("No active review", vim.log.levels.WARN)
   end
-  local list = items(st)
-  if #list == 0 then
-    return require("review.util").notify("No open comment threads")
+  local keep = {}
+  if #items(st, keep) == 0 then
+    return util.notify("No open comment threads")
   end
-  local outdated = #vim.tbl_filter(function(i)
-    return i.outdated
-  end, list)
   Snacks.picker({
-    title = ("Threads · %d open%s · R reply  X resolve  D delete pending"):format(
-      #list,
-      outdated > 0 and (" (%d outdated)"):format(outdated) or ""
-    ),
-    items = list,
+    title = title(items(st, keep)),
+    finder = function()
+      return items(review().active() or st, keep)
+    end,
     format = format,
     preview = "preview",
     focus = "list",
@@ -123,7 +137,19 @@ function M.open()
     end,
     actions = {
       thread_reply = on_thread(review().reply),
-      thread_resolve = on_thread(review().toggle_resolved),
+      -- resolving needs no input, so the picker stays open and re-lists
+      thread_resolve = function(picker, item)
+        if not item then
+          return
+        end
+        keep[item.thread.id] = true
+        review().toggle_resolved(item.thread, function()
+          if not picker.closed then
+            picker.title = title(items(review().active() or st, keep))
+            picker:refresh()
+          end
+        end)
+      end,
       thread_delete = on_thread(review().delete_pending),
     },
     win = {
@@ -131,7 +157,7 @@ function M.open()
       list = {
         keys = {
           R = { "thread_reply", desc = "Reply" },
-          X = { "thread_resolve", desc = "Resolve" },
+          X = { "thread_resolve", desc = "Resolve / reopen" },
           D = { "thread_delete", desc = "Delete pending comment" },
         },
       },

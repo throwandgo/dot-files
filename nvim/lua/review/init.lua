@@ -502,7 +502,8 @@ end
 
 --- Resolve the thread on the cursor line (or `t`), or reopen it if already resolved. Unlike
 --- comments this is immediate on GitHub.
-function M.toggle_resolved(t)
+--- `on_done` runs once the threads are refreshed (the threads picker re-lists them).
+function M.toggle_resolved(t, on_done)
   run(function()
     t = pick_thread(t, "Resolve / reopen")
     if not t then
@@ -517,6 +518,9 @@ function M.toggle_resolved(t)
     end
     notify(t.isResolved and "Thread reopened" or "Thread resolved")
     M.refresh_threads()
+    if on_done then
+      on_done()
+    end
   end)
 end
 
