@@ -1,6 +1,6 @@
 -- Review cockpit: a sidebar in the review tab (a diffview of the PR) with what's left to do, where everything is, and the
--- keys to get there. Files carry GitHub's "Viewed" state (synced both ways), agent findings and
--- threads link to their lines, and the top line always names the next step.
+-- keys to get there. Files carry GitHub's "Viewed" state (synced both ways), agent findings link to their
+-- lines, threads open in a picker (t), and the top line always names the next step.
 local gh = require("review.gh")
 local util = require("review.util")
 
@@ -11,12 +11,11 @@ local NAME = "review://panel"
 local WIDTH = 50
 
 ---@class review.Item
----@field kind "header"|"next"|"files"|"file"|"agent"|"finding"|"threads"|"thread"
+---@field kind "header"|"next"|"files"|"file"|"agent"|"finding"|"threads"
 ---@field path? string
 ---@field lnum? integer
 ---@field detail? string
 ---@field run? fun()
----@field thread? table
 
 ---@type table<integer, review.Item>
 local items = {}
@@ -398,44 +397,32 @@ function M.render()
   end
   add({})
 
-  local open = vim.tbl_filter(function(t)
-    return not t.isResolved
-  end, st.threads or {})
+  local open, outdated = 0, 0
+  for _, t in ipairs(st.threads or {}) do
+    if not t.isResolved then
+      open, outdated = open + 1, outdated + (t.isOutdated and 1 or 0)
+    end
+  end
   local p = pending(st)
   add({
     { "Threads ", "ReviewSection" },
-    { ("%d unresolved%s"):format(#open, p > 0 and (" · %d pending (yours)"):format(p) or ""), "ReviewDim" },
-  }, { kind = "threads", run = review().refresh_threads })
-  for _, t in ipairs(open) do
-    local nodes = t.comments and t.comments.nodes or {}
-    local c = nodes[1]
-    if c then
-      local l1 = review().thread_lines(t)
-      local detail = {}
-      for _, n in ipairs(nodes) do
-        detail[#detail + 1] = ("**@%s**%s\n%s\n"):format(
-          n.author and n.author.login or "ghost",
-          n.state == "PENDING" and " _(pending)_" or "",
-          vim.trim(n.body)
-        )
-      end
-      add({
-        { c.state == "PENDING" and "  ✎ " or "  ", "ReviewRisk" },
-        { "@" .. (c.author and c.author.login or "ghost") .. " ", "ReviewSection" },
-        { ("%s:%s "):format(vim.fs.basename(t.path), l1 or "file"), "ReviewDim" },
-        { #nodes > 1 and ("(%d) "):format(#nodes) or "", "ReviewDim" },
-        { oneline(c.body, 200) },
-        { t.isOutdated and "  outdated" or "", "ReviewDim" },
-      }, { kind = "thread", path = t.path, lnum = l1, thread = t, detail = table.concat(detail, "\n") })
-    end
-  end
+    {
+      ("%d open%s%s"):format(
+        open,
+        outdated > 0 and (" (%d outdated)"):format(outdated) or "",
+        p > 0 and (" · %d pending (yours)"):format(p) or ""
+      ),
+      "ReviewDim",
+    },
+    { open > 0 and "  t list" or "", "ReviewKey" },
+  }, { kind = "threads", run = require("review.threads").open })
   add({})
 
   -- key help, grouped by what it's for
   -- stylua: ignore
   for _, group in ipairs({
     { "Move",    { "<CR>", "open", "n N", "unviewed", "h", "hunks" }, { "]r [r", "file", "]m [m", "comment" } },
-    { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "R", "reply", "X", "resolve", "D", "delete pending" } },
+    { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "t", "threads (R reply  X resolve  D delete)" } },
     { "Explore", { "K", "details", "i", "impact", "a", "ask agent" } },
     { "Panel",   { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end" } },
   }) do
@@ -540,11 +527,11 @@ local function create_buf()
   map("[r", function()
     M.jump(-1)
   end, "Prev changed file")
-  -- from the thread (or file) under the cursor
+  -- from the file under the cursor
   for lhs, step in pairs({ ["]m"] = 1, ["[m"] = -1 }) do
     map(lhs, function()
       local it = item() or {}
-      M.jump_thread(step, it.path, it.kind == "thread" and it.lnum or 0)
+      M.jump_thread(step, it.path, 0)
     end, (step > 0 and "Next" or "Prev") .. " comment thread")
   end
   map("h", function()
@@ -564,19 +551,9 @@ local function create_buf()
     vim.api.nvim_set_current_win(main_win(review().active()) or 0)
     review().comment()
   end, "Comment on the diff's cursor line")
-  local function on_thread(fn)
-    return function()
-      local it = item()
-      if it and it.thread then
-        fn(it.thread)
-      else
-        util.notify("Put the cursor on a thread (or use it on a line in the diff)", vim.log.levels.WARN)
-      end
-    end
-  end
-  map("R", on_thread(review().reply), "Reply to thread")
-  map("X", on_thread(review().toggle_resolved), "Resolve / reopen thread")
-  map("D", on_thread(review().delete_pending), "Delete pending comment")
+  map("t", function()
+    require("review.threads").open()
+  end, "Comment threads")
   map("r", function()
     util.run(review().refresh_threads)
   end, "Refresh")
@@ -694,6 +671,7 @@ local function diff_keys(b)
       if f then M.open(f) end
     end, "Toggle viewed (+ next unviewed)" },
     { "c", function() review().comment() end, "Comment on line" },
+    { "t", function() require("review.threads").open() end, "Comment threads" },
     { "R", function() review().reply() end, "Reply to thread on line" },
     { "X", function() review().toggle_resolved() end, "Resolve / reopen thread on line" },
     { "D", function() review().delete_pending() end, "Delete pending comment on line" },

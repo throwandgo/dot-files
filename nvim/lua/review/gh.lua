@@ -36,9 +36,9 @@ query($owner: String!, $name: String!, $number: Int!) {
       files(first: 100) { nodes { path viewerViewedState } }
       reviewThreads(first: 100) {
         nodes {
-          id path line startLine isResolved isOutdated subjectType
+          id path line startLine originalLine isResolved isOutdated subjectType
           viewerCanReply viewerCanResolve viewerCanUnresolve
-          comments(first: 30) { nodes { id author { login } body state viewerCanDelete } }
+          comments(first: 30) { nodes { id author { login } body state viewerCanDelete createdAt } }
         }
       }
     }
