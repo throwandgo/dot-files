@@ -328,7 +328,9 @@ local function steps(dir, check)
     return out("skip ESLint on a real repo: no " .. sfile)
   end
   local target
-  for rel in pairs(vim.json.decode(table.concat(vim.fn.readfile(sfile), "\n"))) do
+  local suppressed = vim.tbl_keys(vim.json.decode(table.concat(vim.fn.readfile(sfile), "\n")))
+  table.sort(suppressed)
+  for _, rel in ipairs(suppressed) do
     if rel:match("%.tsx?$") and vim.fn.filereadable(real .. "/" .. rel) == 1 then
       target = real .. "/" .. rel
       break
@@ -341,7 +343,8 @@ local function steps(dir, check)
   vim.api.nvim_create_autocmd("LspRequest", {
     callback = function(ev)
       local r = ev.data.request
-      if r.type == "complete" and r.method == "textDocument/diagnostic" then
+      local c = vim.lsp.get_client_by_id(ev.data.client_id)
+      if r.type == "complete" and r.method == "textDocument/diagnostic" and c and c.name == "eslint" then
         pulled[ev.buf] = true
       end
     end,
@@ -364,6 +367,44 @@ local function steps(dir, check)
     ("eslint lints %s (typed rules)"):format(vim.fs.basename(target))
   )
   check(client(buf, "tsgo") ~= nil and client(buf, "tsgo").root_dir == real, "tsgo attaches at the repo root")
+
+  -- Save runs ESLint's fixes, then prettier; checked by swapping the first two imports.
+  local names = vim.tbl_map(
+    function(f)
+      return f.name
+    end,
+    vim.tbl_filter(function(f)
+      return f.active
+    end, LazyVim.format.resolve(buf))
+  )
+  check(
+    table.concat(names, ",") == "eslint: fix all,conform.nvim",
+    ("save runs ESLint fixes, then prettier (got %s)"):format(table.concat(names, ","))
+  )
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  local imports = {}
+  for i, l in ipairs(lines) do
+    if l:match("^import .* from '.*';$") then
+      imports[#imports + 1] = i
+    end
+  end
+  if #imports >= 2 and imports[2] == imports[1] + 1 then
+    local a, b = imports[1], imports[2]
+    vim.api.nvim_buf_set_lines(buf, a - 1, b, false, { lines[b], lines[a] })
+    pulled[buf] = false
+    vim.wait(30000, function()
+      return pulled[buf]
+    end, 50)
+    local t0 = vim.uv.hrtime()
+    ts.eslint_fix(buf)
+    local ms = (vim.uv.hrtime() - t0) / 1e6
+    local now = vim.api.nvim_buf_get_lines(buf, a - 1, b, false)
+    check(
+      vim.deep_equal(now, { lines[a], lines[b] }),
+      ("ESLint fix-all restores import order (%dms, got %s)"):format(ms, table.concat(now, " | "))
+    )
+  end
+  vim.bo[buf].modified = false
 end
 
 -- Entry point for the headless nvim.

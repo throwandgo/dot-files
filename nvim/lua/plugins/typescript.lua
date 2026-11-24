@@ -45,8 +45,22 @@ return {
           -- Typed linting holds a TypeScript program per tsconfig; repos' lint scripts give 8G.
           cmd_env = { NODE_OPTIONS = "--max-old-space-size=8192" },
           handlers = ts.eslint_handlers,
-          settings = { format = false }, -- prettier formats; ESLint only lints
+          settings = { format = false }, -- prettier formats; ESLint fixes via ts.eslint_fix
         },
+      },
+      setup = {
+        eslint = function()
+          -- Runs before prettier (conform, priority 100); <leader>uf toggles both.
+          LazyVim.format.register({
+            name = "eslint: fix all",
+            primary = false,
+            priority = 200,
+            format = ts.eslint_fix,
+            sources = function(buf)
+              return #vim.lsp.get_clients({ bufnr = buf, name = "eslint" }) > 0 and { "eslint" } or {}
+            end,
+          })
+        end,
       },
     },
   },

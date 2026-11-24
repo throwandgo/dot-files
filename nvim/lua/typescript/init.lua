@@ -71,8 +71,14 @@ function M.unsuppressed(items, fname)
   end, items)
 end
 
+-- "<client id>:<buf>" once ESLint has linted the buffer, i.e. its typed program is loaded.
+local linted = {}
+
 M.eslint_handlers = {
   ["textDocument/diagnostic"] = function(err, result, ctx)
+    if not err then
+      linted[ctx.client_id .. ":" .. ctx.bufnr] = true
+    end
     if result and result.kind == "full" and result.items then
       result.items = M.unsuppressed(result.items, vim.uri_to_fname(ctx.params.textDocument.uri))
     end
@@ -84,7 +90,7 @@ M.eslint_handlers = {
   end,
 }
 
-local function apply_code_action(client, buf, kind)
+local function apply_code_action(client, buf, kind, timeout)
   local params = {
     textDocument = vim.lsp.util.make_text_document_params(buf),
     range = {
@@ -93,7 +99,7 @@ local function apply_code_action(client, buf, kind)
     },
     context = { only = { kind }, diagnostics = {} },
   }
-  local res = client:request_sync("textDocument/codeAction", params, 5000, buf)
+  local res = client:request_sync("textDocument/codeAction", params, timeout or 5000, buf)
   for _, action in ipairs(res and res.result or {}) do
     if not action.edit and client:supports_method("codeAction/resolve") then
       local resolved = client:request_sync("codeAction/resolve", action, 5000, buf)
@@ -121,6 +127,17 @@ function M.organize_imports()
       arguments = { { uri = vim.uri_from_bufnr(buf), version = vim.lsp.util.buf_versions[buf] } },
     }, 10000, buf)
   end
+end
+
+-- ESLint's fix-all on save (import/order, perfectionist sorting, ...), like VSCode's
+-- codeActionsOnSave. Warm, it takes ~250ms in ~/web. Until the buffer's first lint lands the
+-- typed program is still loading (~30s cold), so the save goes ahead unfixed instead of waiting.
+function M.eslint_fix(buf)
+  local eslint = vim.lsp.get_clients({ bufnr = buf, name = "eslint" })[1]
+  if vim.g.eslint_fix_on_save == false or not eslint or not linted[eslint.id .. ":" .. buf] then
+    return
+  end
+  apply_code_action(eslint, buf, "source.fixAll.eslint", 2000)
 end
 
 function M.setup()
