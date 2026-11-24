@@ -5,7 +5,10 @@
 
   programs.zoekt = {
     enable = true;
-    repos = [ "${config.home.homeDirectory}/site" ];
+    repos = [
+      "${config.home.homeDirectory}/site"
+      "${config.home.homeDirectory}/web"
+    ];
   };
 
   home.packages = with pkgs; [
