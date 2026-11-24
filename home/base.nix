@@ -253,6 +253,9 @@ in
   programs.mise = {
     enable = true;
     package = pkgs.unstable.mise;
+    # Default node outside projects (repos pin their own via .nvmrc / mise.toml). Replaces nvm,
+    # which cost ~750ms per shell start.
+    globalConfig.tools.node = "lts";
   };
 
   # Global Claude Code instructions. Same shape as the extra.zsh hook above: this file
@@ -346,6 +349,19 @@ in
       fi
     '';
     history.ignoreSpace = true;
+    # A full compinit re-scans fpath and rewrites ~/.zcompdump on every shell (~150ms; agents
+    # spawn many shells). Trust the dump and rebuild it at most once a day.
+    completionInit = ''
+      autoload -Uz compinit
+      () {
+        setopt local_options extended_glob
+        if [[ -s ~/.zcompdump && -z ~/.zcompdump(#qN.mh+24) ]]; then
+          compinit -C -d ~/.zcompdump
+        else
+          compinit -d ~/.zcompdump
+        fi
+      }
+    '';
     antidote = {
       enable = true;
       plugins = [

@@ -3,13 +3,6 @@ if [ -e '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh' ]; then
   . '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
 fi
 
-# Required to load nvm.
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-
-# Required for zsh.
-eval "$(direnv hook zsh)"
-
 # Required for GitHub flows.
 export GITHUB_TOKEN=$(security find-generic-password -a "$USER" -s "metropolis-github-token" -w 2>/dev/null)
 
