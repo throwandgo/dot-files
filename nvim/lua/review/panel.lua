@@ -418,24 +418,7 @@ function M.render()
   }, { kind = "threads", run = require("review.threads").open })
   add({})
 
-  -- key help, grouped by what it's for
-  -- stylua: ignore
-  for _, group in ipairs({
-    { "Move",    { "<CR>", "open", "n N", "unviewed", "h", "hunks" }, { "]r [r", "file", "]m [m", "comment" } },
-    { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "t", "threads (R reply  X resolve  D delete)" } },
-    { "Explore", { "K", "details", "i", "impact", "a", "ask agent" } },
-    { "Panel",   { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end" } },
-  }) do
-    for l = 2, #group do
-      local chunks = { { ("%-8s"):format(l == 2 and group[1] or ""), "ReviewSection" } }
-      for i = 1, #group[l], 2 do
-        chunks[#chunks + 1] = { group[l][i], "ReviewKey" }
-        chunks[#chunks + 1] = { " " .. group[l][i + 1] .. "  ", "ReviewDim" }
-      end
-      add(chunks)
-    end
-  end
-  add({ { "<leader>r", "ReviewKey" }, { " + key does the same from the diff", "ReviewDim" } })
+  add({ { "?", "ReviewKey" }, { " keys", "ReviewDim" } })
 
   vim.bo[b].modifiable = true
   vim.api.nvim_buf_set_lines(b, 0, -1, false, lines)
@@ -443,6 +426,59 @@ function M.render()
   vim.api.nvim_buf_clear_namespace(b, ns, 0, -1)
   for _, h in ipairs(hls) do
     vim.api.nvim_buf_set_extmark(b, ns, h[1], h[2], { end_col = h[3], hl_group = h[4] })
+  end
+end
+
+-- key help, grouped by what it's for
+-- stylua: ignore
+local HELP = {
+  { "Move",    { "<CR>", "open", "n N", "next/prev unviewed", "h", "hunks" }, { "]r [r", "next/prev file", "]m [m", "next/prev comment" } },
+  { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "t", "threads — then R reply  X resolve  D delete pending" } },
+  { "Explore", { "K", "details", "i", "impact", "a", "ask agent" } },
+  { "Panel",   { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end review" } },
+}
+
+--- The panel's keys in a popup (? again, q or <Esc> closes it).
+function M.help()
+  local lines, hls = {}, {}
+  local function add(chunks)
+    local line = ""
+    for _, c in ipairs(chunks) do
+      hls[#hls + 1] = { #lines, #line, #line + #c[1], c[2] }
+      line = line .. c[1]
+    end
+    lines[#lines + 1] = " " .. line
+  end
+  for _, group in ipairs(HELP) do
+    for l = 2, #group do
+      local chunks = { { ("%-9s"):format(l == 2 and group[1] or ""), "ReviewSection" } }
+      for i = 1, #group[l], 2 do
+        chunks[#chunks + 1] = { group[l][i], "ReviewKey" }
+        chunks[#chunks + 1] = { " " .. group[l][i + 1] .. "   ", "ReviewDim" }
+      end
+      add(chunks)
+    end
+  end
+  add({})
+  add({ { "<leader>r", "ReviewKey" }, { " + key does the same from the diff", "ReviewDim" } })
+  local width = 0
+  for _, l in ipairs(lines) do
+    width = math.max(width, vim.fn.strdisplaywidth(l))
+  end
+  local w = Snacks.win({
+    text = lines,
+    width = width + 1,
+    height = #lines,
+    border = "rounded",
+    title = " Review keys ",
+    footer = " ? q close ",
+    footer_pos = "right",
+    bo = { modifiable = false },
+    wo = { cursorline = false, wrap = false },
+    keys = { q = "close", ["?"] = "close", ["<Esc>"] = "close" },
+  })
+  for _, h in ipairs(hls) do
+    vim.api.nvim_buf_set_extmark(w.buf, ns, h[1], h[2] + 1, { end_col = h[3] + 1, hl_group = h[4] })
   end
 end
 
@@ -501,6 +537,7 @@ local function create_buf()
   map("o", act, "Open")
   map("<2-LeftMouse>", act, "Open")
   map("K", hover, "Details")
+  map("?", M.help, "Keys")
   map("v", function()
     local p = path()
     M.toggle_viewed(p)
