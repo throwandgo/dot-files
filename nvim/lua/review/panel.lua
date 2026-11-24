@@ -434,7 +434,7 @@ function M.render()
   -- key help, grouped by what it's for
   -- stylua: ignore
   for _, group in ipairs({
-    { "Move",    { "<CR>", "open", "n", "next unviewed", "h", "hunks" }, { "]r [r", "file", "]m [m", "comment" } },
+    { "Move",    { "<CR>", "open", "n N", "unviewed", "h", "hunks" }, { "]r [r", "file", "]m [m", "comment" } },
     { "Review",  { "v", "viewed", "c", "comment", "s", "submit" }, { "R", "reply", "X", "resolve", "D", "delete pending" } },
     { "Explore", { "K", "details", "i", "impact", "a", "ask agent" } },
     { "Panel",   { "r", "refresh", "gx", "browser", "q", "hide", "Q", "end" } },
@@ -523,15 +523,17 @@ local function create_buf()
       cursor_to(nxt)
     end
   end, "Toggle viewed")
-  map("n", function()
-    local st = review().active()
-    local f = st and M.next_file(st, current_path(st), 1, true)
-    if f then
-      M.open(f)
-    else
-      util.notify("Every file is viewed — s to submit")
-    end
-  end, "Next unviewed file")
+  for lhs, step in pairs({ n = 1, N = -1 }) do
+    map(lhs, function()
+      local st = review().active()
+      local f = st and M.next_file(st, current_path(st), step, true)
+      if f then
+        M.open(f)
+      else
+        util.notify("Every file is viewed — s to submit")
+      end
+    end, (step > 0 and "Next" or "Prev") .. " unviewed file")
+  end
   map("]r", function()
     M.jump(1)
   end, "Next changed file")
@@ -679,6 +681,11 @@ local function diff_keys(b)
       local f = st and M.next_file(st, p, 1, true)
       if f then M.open(f) else util.notify("Every file is viewed — <leader>rs to submit") end
     end, "Next unviewed file" },
+    { "N", function()
+      local st, p = cur()
+      local f = st and M.next_file(st, p, -1, true)
+      if f then M.open(f) else util.notify("Every file is viewed — <leader>rs to submit") end
+    end, "Prev unviewed file" },
     { "v", function()
       local st, p = cur()
       if not p then return end
