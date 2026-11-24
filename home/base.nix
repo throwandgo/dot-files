@@ -222,6 +222,8 @@ in
 
     unstable.neovim # editor
     unstable.nixpkgs-fmt # nix formatter
+    unstable.prettierd # prettier daemon for nvim format-on-save; uses the repo's prettier + config
+    unstable.vscode-langservers-extracted # eslint/json/css/html language servers, nix node (no mise)
     unstable.nerd-fonts.hasklug # font with icons/glyphs
     unstable.tree-sitter # parsing library for syntax highlighting
   ];
@@ -229,6 +231,10 @@ in
   # jdtls >= 1.63 only runs on Java 25+. Expose a JDK at a fixed path for nvim to launch jdtls
   # with, without putting it on PATH (sbt, Gradle, and projects stay on the system Java 21).
   home.file.".local/share/jdtls-jdk".source = pkgs.jdk25_headless.home;
+
+  # TypeScript 7 (native Go port) for nvim's language server: ~10x faster to load a project than
+  # tsserver. Kept off PATH so repos keep running their own pinned `tsc`.
+  home.file.".local/share/tsgo".source = pkgs.unstable.typescript;
 
   programs.direnv = {
     enable = true;
