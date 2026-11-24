@@ -343,11 +343,19 @@ in
   programs.zsh = {
     enable = true;
     autocd = true;
-    initContent = lib.mkOrder 550 ''
-      if [ -f ~/.config/home-manager/extra.zsh ]; then
-        source ~/.config/home-manager/extra.zsh
-      fi
-    '';
+    initContent = lib.mkMerge [
+      (lib.mkOrder 550 ''
+        if [ -f ~/.config/home-manager/extra.zsh ]; then
+          source ~/.config/home-manager/extra.zsh
+        fi
+      '')
+      # After starship/mise/direnv init, so its precmd hook runs last.
+      (lib.mkOrder 1500 ''
+        if [ -f ~/.config/home-manager/async-git-prompt.zsh ]; then
+          source ~/.config/home-manager/async-git-prompt.zsh
+        fi
+      '')
+    ];
     history.ignoreSpace = true;
     # A full compinit re-scans fpath and rewrites ~/.zcompdump on every shell (~150ms; agents
     # spawn many shells). Trust the dump and rebuild it at most once a day.

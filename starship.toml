@@ -4,7 +4,7 @@ $hostname\
 $directory\
 $git_branch\
 $git_state\
-$git_status\
+${env_var.git_status_async}\
 $python\
 $cmd_duration\
 $line_break\
@@ -36,6 +36,12 @@ ahead = "⇡"
 behind = "⇣"
 diverged = "󰙁"
 format = "[ [($conflicted$untracked$modified$deleted$staged$renamed$ahead_behind)](218) ]($style)"
+
+# git_status is computed in the background by async-git-prompt.zsh (it takes ~400ms in big repos)
+# and lands here; the [git_status] section above still configures how it renders.
+[env_var.git_status_async]
+variable = "STARSHIP_GIT_STATUS"
+format = "[$env_value](218)"
 
 [git_state]
 format = '\([$state( $progress_current/$progress_total)]($style)\) '
