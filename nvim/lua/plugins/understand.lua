@@ -5,7 +5,12 @@ return {
     "neovim/nvim-lspconfig",
     opts = {
       -- borderless floats blend into the code behind them
-      diagnostics = { float = { border = "rounded", source = "if_many" } },
+      diagnostics = {
+        float = { border = "rounded", source = "if_many" },
+        -- Hints (deprecated / unused / "could be async") already render as strikethrough or
+        -- faded text; inline messages for them drown out real errors, as in VSCode.
+        virtual_text = { severity = { min = vim.diagnostic.severity.INFO } },
+      },
       servers = {
         ["*"] = {
           -- stylua: ignore
