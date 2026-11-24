@@ -406,10 +406,24 @@ in
         ""
         "!/opt/homebrew/bin/gh auth git-credential"
       ];
+      branch.sort = "-committerdate";
+      commit.verbose = true;
+      diff.algorithm = "histogram";
+      fetch.prune = true;
       fetch.writeCommitGraph = true;
+      help.autocorrect = "prompt";
       init.defaultBranch = "main";
+      # Shows the common ancestor in conflict hunks, minus lines both sides agree on.
+      merge.conflictStyle = "zdiff3";
+      pull.rebase = true;
       push.autoSetupRemote = true;
       rebase.autosquash = true;
+      rebase.autoStash = true;
+      # Moves every branch in a stack along when rebasing its tip.
+      rebase.updateRefs = true;
+      rerere.autoUpdate = true;
+      rerere.enabled = true;
+      tag.sort = "version:refname";
     };
   };
 
