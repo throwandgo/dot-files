@@ -36,6 +36,8 @@ for name, link in pairs({
   ReviewRisk = "DiagnosticInfo",
   ReviewQuestion = "DiagnosticHint",
   ReviewFail = "DiagnosticError",
+  ReviewZero = "DiagnosticOk",
+  ReviewNonzero = "DiagnosticWarn",
 }) do
   vim.api.nvim_set_hl(0, name, { link = link, default = true })
 end
@@ -362,10 +364,15 @@ function M.render()
   end
   add({})
 
-  local agent_status = st.agent_job and "reviewing in the background…"
-    or st.findings and (#st.findings == 0 and "no findings" or (#st.findings .. (#st.findings == 1 and " finding" or " findings")))
-    or "not run"
-  add({ { "Agent ", "ReviewSection" }, { agent_status, "ReviewDim" } }, {
+  local agent_status = { "not run", "ReviewDim" }
+  if st.agent_job then
+    agent_status = { "reviewing in the background…", "ReviewDim" }
+  elseif st.findings then
+    local n = #st.findings
+    agent_status = n == 0 and { "no findings", "ReviewZero" }
+      or { n .. (n == 1 and " finding" or " findings"), "ReviewNonzero" }
+  end
+  add({ { "Agent ", "ReviewSection" }, agent_status }, {
     kind = "agent",
     run = function()
       if st.agent_job then
@@ -403,12 +410,10 @@ function M.render()
   local p = pending(st)
   add({
     { "Threads ", "ReviewSection" },
+    { open .. " open", open > 0 and "ReviewNonzero" or "ReviewZero" },
     {
-      ("%d open%s%s"):format(
-        open,
-        outdated > 0 and (" (%d outdated)"):format(outdated) or "",
-        p > 0 and (" · %d pending (yours)"):format(p) or ""
-      ),
+      (outdated > 0 and (" (%d outdated)"):format(outdated) or "")
+        .. (p > 0 and (" · %d pending (yours)"):format(p) or ""),
       "ReviewDim",
     },
     { open > 0 and "  t list" or "", "ReviewKey" },
