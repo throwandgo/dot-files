@@ -1,6 +1,6 @@
 -- Review cockpit: a sidebar in the review tab (a diffview of the PR) with what's left to do, where everything is, and the
 -- keys to get there. Files carry GitHub's "Viewed" state (synced both ways), agent findings link to their
--- lines, threads open in a picker (t), and the top line always names the next step.
+-- lines, threads open in a picker (t), and once every file is viewed it nudges you to submit.
 local gh = require("review.gh")
 local util = require("review.util")
 
@@ -231,22 +231,17 @@ local function pending(st)
   end, st.threads or {})
 end
 
----@return string, fun()
-local function next_step(st)
-  local f = M.next_file(st, current_path(st), 1, true)
-  if f then
-    local left = #vim.tbl_filter(function(p)
-      return not st.viewed[p]
-    end, st.files)
-    return ("n  next unviewed: %s (%d left)"):format(vim.fs.basename(f), left), function()
-      M.open(f)
-    end, f
+--- Once every file is viewed, the panel's second line nudges toward submitting.
+---@return string?
+local function submit_hint(st)
+  if M.next_file(st, nil, 1, true) then
+    return
   end
   local p = pending(st)
   if p > 0 then
-    return ("s  all viewed: submit with %d pending comment%s"):format(p, p == 1 and "" or "s"), M.submit
+    return ("s  all viewed: submit with %d pending comment%s"):format(p, p == 1 and "" or "s")
   end
-  return "s  all viewed: approve or request changes", M.submit
+  return "s  all viewed: approve or request changes"
 end
 
 local CI = {
@@ -310,9 +305,11 @@ function M.render()
     dec or { "" },
   }, header)
   add({})
-  local text, run, next_path = next_step(st)
-  add({ { "▶ ", "ReviewNext" }, { text, "ReviewNext" } }, { kind = "next", run = run, path = next_path })
-  add({})
+  local hint = submit_hint(st)
+  if hint then
+    add({ { "▶ ", "ReviewNext" }, { hint, "ReviewNext" } }, { kind = "next", run = M.submit })
+    add({})
+  end
 
   local cur = current_path(st)
   local viewed = #vim.tbl_filter(function(p)
