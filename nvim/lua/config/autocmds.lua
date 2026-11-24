@@ -9,5 +9,6 @@ vim.api.nvim_create_autocmd("FileType", {
 })
 
 require("scala").setup() -- Scala/Java LSP safeguards
+require("typescript").setup() -- :TsSmokeTest, also after :Lazy update / sync
 require("understand").setup()
 require("search.zoekt").setup()
